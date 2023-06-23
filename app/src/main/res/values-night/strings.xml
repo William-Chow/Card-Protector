@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="masked">Masked by</string>
+    <string name="number_ignored">Number Ignored to masked</string>
+    <string name="card_number">Card Number</string>
+    <string name="dash">-</string>
+    <string name="submit">Submit</string>
+    <string name="e_g_1_2_3_4_5_6_7_8_9_0_10">E.g. 1,2,3,4,5,6,7,8,9,0,10…</string>
+    <string name="e_g_masked_the_value">E.g. Masked the value, *</string>
+    <string name="option1">!</string>
+    <string name="option2">\@</string>
+    <string name="option3">#</string>
+    <string name="option4">%</string>
+    <string name="option5">^</string>
+    <string name="option6">&amp;</string>
+    <string name="option7">*</string>
+    <string name="option8">$</string>
+    <string name="number1">1</string>
+    <string name="number2">2</string>
+    <string name="number3">3</string>
+    <string name="number4">4</string>
+    <string name="number5">5</string>
+    <string name="number6">6</string>
+    <string name="number7">7</string>
+    <string name="number8">8</string>
+    <string name="number9">9</string>
+    <string name="number0">0</string>
+    <string name="original_input">Original Input</string>
+    <string name="result_input">Result Input</string>
+    <string name="note_total_number_of_value_to_prevent_be_masked">Note*-Total Number of value to prevent be masked</string>
+    <string name="select_0_meaning_all_number_to_be_masked">Select 0 - meaning all number to be masked</string>
+</resources>
