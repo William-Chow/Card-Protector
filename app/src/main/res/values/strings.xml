@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">123 Filter</string>
+    <string name="app_name">Card Pro</string>
     <string name="masked">Masked by</string>
     <string name="number_ignored">Number Ignored to masked</string>
     <string name="card_number">Card Number</string>

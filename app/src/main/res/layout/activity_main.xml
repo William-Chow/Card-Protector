@@ -21,7 +21,7 @@
         android:layout_height="0dp"
         android:orientation="vertical"
         android:scrollbars="none"
-        app:layout_constraintBottom_toBottomOf="parent"
+        ads:layout_constraintBottom_toTopOf="@+id/btnSubmit"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/adView">
@@ -35,7 +35,7 @@
                 android:id="@+id/tvMaskedLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_margin="10dp"
+                android:layout_margin="5dp"
                 android:text="@string/masked"
                 android:textSize="15sp"
                 android:textStyle="bold" />
@@ -50,7 +50,6 @@
                     android:id="@+id/llMaskedValue"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:gravity="center"
                     android:orientation="horizontal"
                     tools:ignore="VisualLintBounds">
 
@@ -128,7 +127,8 @@
                 android:id="@+id/etMasked"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_margin="10dp"
+                android:layout_marginStart="10dp"
+                android:layout_marginEnd="10dp"
                 android:autofillHints=""
                 android:digits="!@#*$^%"
                 android:enabled="false"
@@ -142,7 +142,7 @@
                 android:id="@+id/tvNumberIgnoredLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_margin="10dp"
+                android:layout_margin="5dp"
                 android:text="@string/number_ignored"
                 android:textSize="15sp"
                 android:textStyle="bold" />
@@ -158,7 +158,8 @@
                     android:id="@+id/btnNumber1"
                     android:layout_width="50dp"
                     android:layout_height="wrap_content"
-                    android:layout_margin="3dp"
+                    android:layout_marginStart="3dp"
+                    android:layout_marginEnd="3dp"
                     android:text="@string/number1"
                     android:textSize="11sp" />
 
@@ -166,7 +167,8 @@
                     android:id="@+id/btnNumber2"
                     android:layout_width="50dp"
                     android:layout_height="wrap_content"
-                    android:layout_margin="3dp"
+                    android:layout_marginStart="3dp"
+                    android:layout_marginEnd="3dp"
                     android:text="@string/number2"
                     android:textSize="11sp" />
 
@@ -174,7 +176,8 @@
                     android:id="@+id/btnNumber3"
                     android:layout_width="50dp"
                     android:layout_height="wrap_content"
-                    android:layout_margin="3dp"
+                    android:layout_marginStart="3dp"
+                    android:layout_marginEnd="3dp"
                     android:text="@string/number3"
                     android:textSize="11sp" />
 
@@ -182,7 +185,8 @@
                     android:id="@+id/btnNumber4"
                     android:layout_width="50dp"
                     android:layout_height="wrap_content"
-                    android:layout_margin="3dp"
+                    android:layout_marginStart="3dp"
+                    android:layout_marginEnd="3dp"
                     android:text="@string/number4"
                     android:textSize="11sp" />
 
@@ -190,7 +194,8 @@
                     android:id="@+id/btnNumber5"
                     android:layout_width="50dp"
                     android:layout_height="wrap_content"
-                    android:layout_margin="3dp"
+                    android:layout_marginStart="3dp"
+                    android:layout_marginEnd="3dp"
                     android:text="@string/number5"
                     android:textSize="11sp" />
 
@@ -207,7 +212,8 @@
                     android:id="@+id/btnNumber6"
                     android:layout_width="50dp"
                     android:layout_height="wrap_content"
-                    android:layout_margin="3dp"
+                    android:layout_marginStart="3dp"
+                    android:layout_marginEnd="3dp"
                     android:text="@string/number6"
                     android:textColor="#E1BEE7"
                     android:textSize="11sp" />
@@ -216,7 +222,8 @@
                     android:id="@+id/btnNumber7"
                     android:layout_width="50dp"
                     android:layout_height="wrap_content"
-                    android:layout_margin="3dp"
+                    android:layout_marginStart="3dp"
+                    android:layout_marginEnd="3dp"
                     android:text="@string/number7"
                     android:textSize="11sp" />
 
@@ -224,7 +231,8 @@
                     android:id="@+id/btnNumber8"
                     android:layout_width="50dp"
                     android:layout_height="wrap_content"
-                    android:layout_margin="3dp"
+                    android:layout_marginStart="3dp"
+                    android:layout_marginEnd="3dp"
                     android:text="@string/number8"
                     android:textSize="11sp" />
 
@@ -232,7 +240,8 @@
                     android:id="@+id/btnNumber9"
                     android:layout_width="50dp"
                     android:layout_height="wrap_content"
-                    android:layout_margin="3dp"
+                    android:layout_marginStart="3dp"
+                    android:layout_marginEnd="3dp"
                     android:text="@string/number9"
                     android:textSize="11sp" />
 
@@ -240,7 +249,8 @@
                     android:id="@+id/btnNumber0"
                     android:layout_width="50dp"
                     android:layout_height="wrap_content"
-                    android:layout_margin="3dp"
+                    android:layout_marginStart="3dp"
+                    android:layout_marginEnd="3dp"
                     android:text="@string/number0"
                     android:textSize="11sp" />
             </androidx.appcompat.widget.LinearLayoutCompat>
@@ -257,7 +267,8 @@
                 android:id="@+id/etNumberIgnored"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_margin="10dp"
+                android:layout_marginStart="10dp"
+                android:layout_marginEnd="10dp"
                 android:autofillHints="creditCardNumber"
                 android:digits="1234567890"
                 android:enabled="false"
@@ -265,7 +276,7 @@
                 android:inputType="none"
                 android:maxLength="2"
                 android:minHeight="48dp"
-                android:textSize="13sp"
+                android:textSize="11sp"
                 tools:ignore="TextFields,VisualLintTextFieldSize" />
 
             <com.google.android.material.textfield.TextInputLayout
@@ -273,9 +284,9 @@
                 style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="25dp"
-                android:layout_marginTop="30dp"
-                android:layout_marginEnd="25dp"
+                android:layout_marginStart="10dp"
+                android:layout_marginTop="10dp"
+                android:layout_marginEnd="10dp"
                 android:hint="@string/card_number"
                 tools:ignore="VisualLintTextFieldSize">
 
@@ -287,61 +298,58 @@
                     android:digits="1234567890-"
                     android:inputType="number"
                     android:textColorHint="#616161"
+                    android:textSize="12sp"
                     tools:ignore="VisualLintTextFieldSize,TextContrastCheck" />
 
             </com.google.android.material.textfield.TextInputLayout>
 
+            <TextView
+                android:id="@+id/tvOriginalLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="15dp"
+                android:layout_marginTop="13dp"
+                android:layout_marginEnd="15dp"
+                android:layout_marginBottom="3dp"
+                android:text="@string/original_input"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvOriginalInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="20dp"
+                android:layout_marginTop="3dp"
+                android:layout_marginEnd="20dp"
+                android:layout_marginBottom="3dp"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvResultLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="15dp"
+                android:layout_marginTop="3dp"
+                android:layout_marginEnd="15dp"
+                android:layout_marginBottom="3dp"
+                android:text="@string/result_input"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvResultInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="20dp"
+                android:layout_marginTop="3dp"
+                android:layout_marginEnd="20dp"
+                android:layout_marginBottom="3dp"
+                android:textSize="15sp" />
+
         </androidx.appcompat.widget.LinearLayoutCompat>
 
     </ScrollView>
-
-    <TextView
-        android:id="@+id/tvOriginalLabel"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="15dp"
-        android:layout_marginTop="3dp"
-        android:layout_marginEnd="15dp"
-        android:layout_marginBottom="3dp"
-        android:text="@string/original_input"
-        android:textSize="13sp"
-        android:textStyle="bold"
-        app:layout_constraintBottom_toTopOf="@+id/tvOriginalInput" />
-
-    <TextView
-        android:id="@+id/tvOriginalInput"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="20dp"
-        android:layout_marginTop="3dp"
-        android:layout_marginEnd="20dp"
-        android:layout_marginBottom="3dp"
-        android:textSize="13sp"
-        app:layout_constraintBottom_toTopOf="@+id/tvResultLabel" />
-
-    <TextView
-        android:id="@+id/tvResultLabel"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="15dp"
-        android:layout_marginTop="3dp"
-        android:layout_marginEnd="15dp"
-        android:layout_marginBottom="3dp"
-        android:text="@string/result_input"
-        android:textSize="13sp"
-        android:textStyle="bold"
-        app:layout_constraintBottom_toTopOf="@+id/tvResultInput" />
-
-    <TextView
-        android:id="@+id/tvResultInput"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="20dp"
-        android:layout_marginTop="3dp"
-        android:layout_marginEnd="20dp"
-        android:layout_marginBottom="3dp"
-        android:textSize="15sp"
-        app:layout_constraintBottom_toTopOf="@+id/btnSubmit" />
 
     <Button
         android:id="@+id/btnSubmit"
