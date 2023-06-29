@@ -6,9 +6,14 @@ import android.view.View
 import android.view.View.OnClickListener
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.gms.ads.AdError
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.AdView
+import com.google.android.gms.ads.FullScreenContentCallback
+import com.google.android.gms.ads.LoadAdError
 import com.google.android.gms.ads.MobileAds
+import com.google.android.gms.ads.interstitial.InterstitialAd
+import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 import com.kotlin.card.R
 import com.kotlin.card.databinding.ActivityMainBinding
 import com.kotlin.card.filter.Utils
@@ -17,16 +22,16 @@ class MainActivity : AppCompatActivity(), OnClickListener {
 
     private lateinit var binding: ActivityMainBinding
 
-    private lateinit var adBannerView : AdView
+    private lateinit var mAdView : AdView
+    private var mInterstitialAd: InterstitialAd? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater) //initializing the binding class
         setContentView(binding.root)
 
-        MobileAds.initialize(this)
-        adBannerView = findViewById(R.id.adView)
-        adBannerView.loadAd(AdRequest.Builder().build())
+        initAdmob()
+        admobBanner()
 
         // Option
         binding.btnOption1.setOnClickListener(this@MainActivity)
@@ -61,6 +66,15 @@ class MainActivity : AppCompatActivity(), OnClickListener {
         // 1234-1236-7654-7890
     }
 
+    private fun initAdmob(){
+        MobileAds.initialize(this) { }
+    }
+
+    private fun admobBanner(){
+        mAdView = findViewById(R.id.adView)
+        mAdView.loadAd(AdRequest.Builder().build())
+    }
+
     @SuppressLint("SetTextI18n")
     private fun accountNumberChecking(cardNumber: String, numberIgnored: String, etMasked: String) {
         if (etMasked.toCharArray().isEmpty()) {
@@ -70,12 +84,35 @@ class MainActivity : AppCompatActivity(), OnClickListener {
         } else if (cardNumber.isEmpty()) {
             Toast.makeText(this@MainActivity, "This Credit Card Number cannot be empty.", Toast.LENGTH_LONG).show()
         } else {
-            binding.tvOriginalInput.text = cardNumber
-            binding.tvResultInput.text = Utils.filterBankNumber(cardNumber, etMasked.toCharArray()[0], '-', numberIgnored.toInt())
+            interstitial(cardNumber, Utils.filterBankNumber(cardNumber, etMasked.toCharArray()[0], '-', numberIgnored.toInt()))
         }
     }
 
+    private fun interstitial(cardNumber: String, filterBankNumber: String) {
+        InterstitialAd.load(this@MainActivity,this@MainActivity.getString(R.string.admob_interstitial_ad_unit_id), AdRequest.Builder().build(), object : InterstitialAdLoadCallback() {
+            override fun onAdFailedToLoad(adError: LoadAdError) {
+                mInterstitialAd = null
+            }
 
+            override fun onAdLoaded(interstitialAd: InterstitialAd) {
+                mInterstitialAd = interstitialAd
+                mInterstitialAd?.fullScreenContentCallback = object: FullScreenContentCallback() {
+                    override fun onAdDismissedFullScreenContent() {
+                        // Called when ad is dismissed.
+                        mInterstitialAd = null
+                        binding.tvOriginalInput.text = cardNumber
+                        binding.tvResultInput.text = filterBankNumber
+                    }
+
+                    override fun onAdFailedToShowFullScreenContent(adError: AdError) {
+                        // Called when ad fails to show.
+                        mInterstitialAd = null
+                    }
+                }
+                mInterstitialAd!!.show(this@MainActivity)
+            }
+        })
+    }
 
     override fun onClick(v: View) {
         when (v.id) {

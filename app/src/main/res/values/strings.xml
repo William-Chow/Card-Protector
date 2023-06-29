@@ -31,6 +31,6 @@
     <string name="select_0_meaning_all_number_to_be_masked">Select 0 - meaning all number to be masked</string>
 
     <string name="admob_id">ca-app-pub-4541063798492496~7245676720</string>
-    <string name="admob_banner_ad_unit_id">ca-app-pub-4541063798492496/4132999042</string>
-    <string name="admob_interstitial_ad_unit_id">ca-app-pub-4541063798492496/7908592527</string>
+    <string name="admob_banner_ad_unit_id">ca-app-pub-4541063798492496/2428797453</string>
+    <string name="admob_interstitial_ad_unit_id">ca-app-pub-4541063798492496/3877610492</string>
 </resources>
