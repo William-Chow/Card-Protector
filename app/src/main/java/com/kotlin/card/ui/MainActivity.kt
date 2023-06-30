@@ -1,6 +1,7 @@
 package com.kotlin.card.ui
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.view.View.OnClickListener
@@ -25,6 +26,8 @@ class MainActivity : AppCompatActivity(), OnClickListener {
     private lateinit var mAdView : AdView
     private var mInterstitialAd: InterstitialAd? = null
 
+    private lateinit var inAppUpdate: InAppUpdate
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater) //initializing the binding class
@@ -32,6 +35,8 @@ class MainActivity : AppCompatActivity(), OnClickListener {
 
         initAdmob()
         admobBanner()
+
+        inAppUpdate = InAppUpdate(this@MainActivity)
 
         // Option
         binding.btnOption1.setOnClickListener(this@MainActivity)
@@ -205,5 +210,20 @@ class MainActivity : AppCompatActivity(), OnClickListener {
                 binding.etNumberIgnored.setText("0")
             }
         }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        inAppUpdate.onActivityResult(requestCode, resultCode, data)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        inAppUpdate.onResume()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        inAppUpdate.onDestroy()
     }
 }
