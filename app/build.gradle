@@ -28,10 +28,10 @@ android {
     }
 
     /*
-    storeFile=app/keystore/upload-key.jks
-    storePassword=CardProtectorUpload2026!
-    keyAlias=upload
-    keyPassword=CardProtectorUpload2026!
+    storeFile=app/keystore/keystore.jks
+    storePassword=android
+    keyAlias=android
+    keyPassword=android
      */
     signingConfigs {
         release {
