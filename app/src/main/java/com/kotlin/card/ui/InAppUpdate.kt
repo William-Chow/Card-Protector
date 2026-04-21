@@ -1,31 +1,31 @@
 package com.kotlin.card.ui
 
 import android.app.Activity
-import android.content.Intent
 import android.graphics.Color
 import android.util.Log
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.play.core.appupdate.AppUpdateInfo
 import com.google.android.play.core.appupdate.AppUpdateManager
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory
+import com.google.android.play.core.appupdate.AppUpdateOptions
 import com.google.android.play.core.install.InstallState
 import com.google.android.play.core.install.InstallStateUpdatedListener
 import com.google.android.play.core.install.model.AppUpdateType
 import com.google.android.play.core.install.model.InstallStatus
 import com.google.android.play.core.install.model.UpdateAvailability
-import com.kotlin.card.R
 
-class InAppUpdate(activity: Activity) : InstallStateUpdatedListener {
+class InAppUpdate(
+    private val activity: Activity,
+    private val updateLauncher: ActivityResultLauncher<IntentSenderRequest>,
+    private val onUpdateFlowFailed: (Int) -> Unit
+) : InstallStateUpdatedListener {
 
-    private var appUpdateManager: AppUpdateManager
-    private val requestCodeID = 500
-    private var parentActivity: Activity = activity
-
+    private val appUpdateManager: AppUpdateManager = AppUpdateManagerFactory.create(activity)
     private var currentType = AppUpdateType.FLEXIBLE
 
     init {
-        appUpdateManager = AppUpdateManagerFactory.create(parentActivity)
         appUpdateManager.appUpdateInfo.addOnSuccessListener { info ->
             // Check if update is available
             if (info.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE) { // UPDATE IS AVAILABLE
@@ -75,7 +75,11 @@ class InAppUpdate(activity: Activity) : InstallStateUpdatedListener {
 
 
     private fun startUpdate(info: AppUpdateInfo, type: Int) {
-        appUpdateManager.startUpdateFlowForResult(info, type, parentActivity, requestCodeID)
+        appUpdateManager.startUpdateFlowForResult(
+            info,
+            updateLauncher,
+            AppUpdateOptions.newBuilder(type).build()
+        )
         currentType = type
     }
 
@@ -94,18 +98,19 @@ class InAppUpdate(activity: Activity) : InstallStateUpdatedListener {
         }
     }
 
-    fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode == requestCodeID) {
-            if (resultCode != AppCompatActivity.RESULT_OK) {
-                // If the update is cancelled or fails, you can request to start the update again.
-                Log.e("ERROR", "Update flow failed! Result code: $resultCode")
-            }
+    fun onActivityResult(resultCode: Int) {
+        if (resultCode != android.app.Activity.RESULT_OK) {
+            // If the update is canceled or fails, you can request to start the update again.
+            Log.e("ERROR", "Update flow failed! Result code: $resultCode")
+            onUpdateFlowFailed(resultCode)
         }
     }
 
     private fun flexibleUpdateDownloadCompleted() {
+        val anchorView = activity.findViewById<android.view.View?>(android.R.id.content) ?: return
+
         Snackbar.make(
-            parentActivity.findViewById(R.id.clContent),
+            anchorView,
             "An update has just been downloaded.",
             Snackbar.LENGTH_INDEFINITE
         ).apply {
