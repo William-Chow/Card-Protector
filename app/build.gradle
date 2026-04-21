@@ -27,6 +27,12 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    /*
+    storeFile=app/keystore/upload-key.jks
+    storePassword=CardProtectorUpload2026!
+    keyAlias=upload
+    keyPassword=CardProtectorUpload2026!
+     */
     signingConfigs {
         release {
             if (keystorePropertiesFile.exists()) {
