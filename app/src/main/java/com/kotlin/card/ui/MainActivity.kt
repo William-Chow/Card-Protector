@@ -21,12 +21,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -49,7 +51,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -90,7 +91,12 @@ import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 import com.kotlin.card.BuildConfig
 import com.kotlin.card.R
 import com.kotlin.card.filter.CardTools
-import com.kotlin.card.filter.Utils
+import com.kotlin.card.filter.MaskMode
+import com.kotlin.card.filter.countCards
+import com.kotlin.card.filter.extractFirstCardDigits
+import com.kotlin.card.filter.keepCounts
+import com.kotlin.card.filter.maskAllInText
+import com.kotlin.card.filter.maskNumber
 import com.kotlin.card.ui.theme.CardGradBottom
 import com.kotlin.card.ui.theme.CardGradMid
 import com.kotlin.card.ui.theme.CardGradTop
@@ -101,6 +107,8 @@ import com.kotlin.card.ui.theme.TextPrimary
 import com.kotlin.card.ui.theme.ThemeMode
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+
+private enum class ScreenMode { Single, Batch }
 
 class MainActivity : ComponentActivity() {
 
@@ -115,6 +123,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val sharedText = parseSharedText(intent)
         setContent {
             var themeMode by remember { mutableStateOf(ThemeMode.System) }
             val darkTheme = when (themeMode) {
@@ -124,6 +133,7 @@ class MainActivity : ComponentActivity() {
             }
             CardProTheme(darkTheme = darkTheme) {
                 MainScreen(
+                    sharedText = sharedText,
                     onCommit = { showInterstitial() },
                     themeMode = themeMode,
                     onThemeChange = { themeMode = it }
@@ -137,6 +147,15 @@ class MainActivity : ComponentActivity() {
             updateLauncher = appUpdateResultLauncher,
             onUpdateFlowFailed = { }
         )
+    }
+
+    /** Text handed to us by a SEND share or the PROCESS_TEXT selection action. */
+    private fun parseSharedText(intent: Intent): String? = when (intent.action) {
+        Intent.ACTION_SEND ->
+            if (intent.type == "text/plain") intent.getStringExtra(Intent.EXTRA_TEXT) else null
+        Intent.ACTION_PROCESS_TEXT ->
+            intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
+        else -> null
     }
 
     private fun loadInterstitial() {
@@ -194,6 +213,7 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     private fun MainScreen(
+        sharedText: String?,
         onCommit: () -> Unit,
         themeMode: ThemeMode,
         onThemeChange: (ThemeMode) -> Unit
@@ -205,27 +225,37 @@ class MainActivity : ComponentActivity() {
         val scope = rememberCoroutineScope()
         val colors = MaterialTheme.colorScheme
 
-        var cardNumber by remember { mutableStateOf("") }
-        var keepCount by remember { mutableStateOf(4) }
+        val sharedCount = remember(sharedText) { sharedText?.let { countCards(it) } ?: 0 }
+
+        var screenMode by remember {
+            mutableStateOf(if (sharedCount > 1) ScreenMode.Batch else ScreenMode.Single)
+        }
+        var cardNumber by remember {
+            mutableStateOf(sharedText?.let { extractFirstCardDigits(it) } ?: "")
+        }
+        var batchText by remember {
+            mutableStateOf(if (sharedCount > 1) sharedText.orEmpty() else "")
+        }
+        var maskMode by remember { mutableStateOf(MaskMode.LAST) }
+        var keepN by remember { mutableStateOf(4) }
         var maskSymbol by remember { mutableStateOf('*') }
         var commitPulse by remember { mutableStateOf(0) }
 
         val symbols = listOf('*', '•', '#', 'x', '$', '!', '@', '%', '^', '&')
+        val (keepLeading, keepTrailing) = keepCounts(maskMode, keepN.coerceIn(0, 16))
 
-        // Live masking — recomputes on every keystroke, no Submit, no ad dependency.
-        val masked by remember {
-            derivedStateOf {
-                val digitCount = cardNumber.count { it.isDigit() }
-                val keep = keepCount.coerceAtMost(digitCount)
-                Utils.filterBankNumber(cardNumber, maskSymbol, '-', keep)
-            }
+        val singleMasked = remember(cardNumber, maskSymbol, keepLeading, keepTrailing) {
+            maskNumber(cardNumber, maskSymbol, keepLeading, keepTrailing)
         }
+        val batchMasked = remember(batchText, maskSymbol, keepLeading, keepTrailing) {
+            maskAllInText(batchText, maskSymbol, keepLeading, keepTrailing)
+        }
+        val batchCount = remember(batchText) { countCards(batchText) }
 
-        val digits = cardNumber.filter { it.isDigit() }
-        val hasInput = digits.isNotEmpty()
-        val brand = CardTools.detectBrand(digits)
-        val luhnOk = hasInput && CardTools.isLuhnValid(digits)
-        val effectiveKeep = if (hasInput) keepCount.coerceAtMost(digits.length) else keepCount
+        val hasInput = cardNumber.isNotEmpty()
+        val brand = CardTools.detectBrand(cardNumber)
+        val luhnOk = hasInput && CardTools.isLuhnValid(cardNumber)
+        val canCommit = if (screenMode == ScreenMode.Single) hasInput else batchCount > 0
 
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -279,110 +309,217 @@ class MainActivity : ComponentActivity() {
                     }
                 )
 
+                // ── Single / Batch mode tabs ─────────────────────────────────
+                SingleChoiceSegmentedButtonRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    SegmentedButton(
+                        selected = screenMode == ScreenMode.Single,
+                        onClick = { screenMode = ScreenMode.Single },
+                        shape = SegmentedButtonDefaults.itemShape(0, 2)
+                    ) { Text("Single card") }
+                    SegmentedButton(
+                        selected = screenMode == ScreenMode.Batch,
+                        onClick = { screenMode = ScreenMode.Batch },
+                        shape = SegmentedButtonDefaults.itemShape(1, 2)
+                    ) { Text("Batch text") }
+                }
+
                 Column(
                     modifier = Modifier
                         .weight(1f)
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 14.dp)
                 ) {
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(8.dp))
 
-                    // ── Hero: the masked card ────────────────────────────────
-                    CardHero(
-                        masked = masked,
-                        brand = brand,
-                        luhnOk = luhnOk,
-                        hasInput = hasInput,
-                        pulse = commitPulse
-                    )
+                    if (screenMode == ScreenMode.Single) {
+                        // ── Hero ─────────────────────────────────────────────
+                        CardHero(
+                            masked = singleMasked,
+                            brand = brand,
+                            luhnOk = luhnOk,
+                            hasInput = hasInput,
+                            pulse = commitPulse
+                        )
 
-                    Spacer(Modifier.height(14.dp))
+                        Spacer(Modifier.height(14.dp))
 
-                    // ── Action row ───────────────────────────────────────────
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Button(
-                            modifier = Modifier.weight(1f),
-                            enabled = hasInput,
-                            onClick = {
-                                clipboard.setText(AnnotatedString(masked))
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                scope.launch { snackbarHostState.showSnackbar("Copied masked card") }
-                            }
-                        ) { Text("Copy") }
-
-                        OutlinedButton(
-                            modifier = Modifier.weight(1f),
-                            enabled = hasInput,
-                            onClick = {
-                                val send = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, masked)
+                        // ── Action row ───────────────────────────────────────
+                        val actionPadding = PaddingValues(horizontal = 4.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Button(
+                                modifier = Modifier.weight(1f),
+                                enabled = hasInput,
+                                contentPadding = actionPadding,
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(singleMasked))
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    scope.launch { snackbarHostState.showSnackbar("Copied masked card") }
                                 }
-                                context.startActivity(Intent.createChooser(send, null))
-                            }
-                        ) { Text("Share") }
+                            ) { Text("Copy", maxLines = 1, softWrap = false) }
 
-                        OutlinedButton(
-                            enabled = hasInput,
-                            onClick = {
-                                cardNumber = ""
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            OutlinedButton(
+                                modifier = Modifier.weight(1f),
+                                enabled = hasInput,
+                                contentPadding = actionPadding,
+                                onClick = {
+                                    val send = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, singleMasked)
+                                    }
+                                    context.startActivity(Intent.createChooser(send, null))
+                                }
+                            ) { Text("Share", maxLines = 1, softWrap = false) }
+
+                            OutlinedButton(
+                                modifier = Modifier.weight(1f),
+                                enabled = hasInput,
+                                contentPadding = actionPadding,
+                                onClick = {
+                                    scope.launch {
+                                        val bitmap = renderCardBitmap(singleMasked, brand)
+                                        shareCardImage(context, bitmap)
+                                    }
+                                }
+                            ) { Text("Image", maxLines = 1, softWrap = false) }
+
+                            OutlinedButton(
+                                modifier = Modifier.weight(1f),
+                                enabled = hasInput,
+                                contentPadding = actionPadding,
+                                onClick = {
+                                    cardNumber = ""
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
+                            ) { Text("Clear", maxLines = 1, softWrap = false) }
+                        }
+
+                        Spacer(Modifier.height(14.dp))
+
+                        // ── Card number input ────────────────────────────────
+                        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                OutlinedTextField(
+                                    value = cardNumber,
+                                    onValueChange = { value ->
+                                        val onlyDigits = value.filter { it.isDigit() }
+                                        if (onlyDigits.length <= 19) cardNumber = onlyDigits
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text(getString(R.string.card_number)) },
+                                    singleLine = true,
+                                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
+                                    visualTransformation = CardGroupingTransformation,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                )
                             }
-                        ) { Text("Clear") }
+                        }
+                    } else {
+                        // ── Batch text ───────────────────────────────────────
+                        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                OutlinedTextField(
+                                    value = batchText,
+                                    onValueChange = { batchText = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text("Paste text with card numbers") },
+                                    minLines = 4,
+                                    maxLines = 8,
+                                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace)
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "$batchCount card number(s) detected",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (batchCount > 0) Success else colors.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(16.dp))
+                                Text(
+                                    text = "Result",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = colors.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(colors.surfaceVariant)
+                                        .padding(12.dp)
+                                ) {
+                                    SelectionContainer {
+                                        Text(
+                                            text = batchMasked.ifEmpty { "Masked text appears here" },
+                                            fontFamily = FontFamily.Monospace,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = if (batchMasked.isEmpty()) colors.onSurfaceVariant else colors.onSurface
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(12.dp))
+                                Button(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = batchCount > 0,
+                                    onClick = {
+                                        clipboard.setText(AnnotatedString(batchMasked))
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        scope.launch { snackbarHostState.showSnackbar("Copied masked text") }
+                                    }
+                                ) { Text("Copy result") }
+                            }
+                        }
                     }
 
                     Spacer(Modifier.height(14.dp))
 
-                    // ── Control sheet ────────────────────────────────────────
+                    // ── Shared masking settings ──────────────────────────────
                     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            OutlinedTextField(
-                                value = cardNumber,
-                                onValueChange = { value ->
-                                    val onlyDigits = value.filter { it.isDigit() }
-                                    if (onlyDigits.length <= 19) cardNumber = onlyDigits
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text(getString(R.string.card_number)) },
-                                singleLine = true,
-                                textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
-                                visualTransformation = CardGroupingTransformation,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                            )
-
-                            Spacer(Modifier.height(16.dp))
-
                             Text(
-                                text = "Digits to keep",
+                                text = "Reveal",
                                 style = MaterialTheme.typography.labelLarge,
                                 color = colors.onSurfaceVariant
                             )
                             Spacer(Modifier.height(6.dp))
                             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                                val presets = listOf("Hide all" to 0, "Last 4" to 4, "Last 6" to 6)
-                                presets.forEachIndexed { index, (label, value) ->
+                                val modes = listOf(
+                                    "Last" to MaskMode.LAST,
+                                    "First" to MaskMode.FIRST,
+                                    "6 + 4" to MaskMode.FIRST6_LAST4
+                                )
+                                modes.forEachIndexed { index, (label, mode) ->
                                     SegmentedButton(
-                                        selected = keepCount == value,
+                                        selected = maskMode == mode,
                                         onClick = {
-                                            keepCount = value
+                                            maskMode = mode
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         },
-                                        shape = SegmentedButtonDefaults.itemShape(index, presets.size)
+                                        shape = SegmentedButtonDefaults.itemShape(index, modes.size)
                                     ) { Text(label) }
                                 }
                             }
-                            Slider(
-                                value = keepCount.toFloat(),
-                                onValueChange = { keepCount = it.roundToInt() },
-                                valueRange = 0f..16f,
-                                steps = 15
-                            )
+                            if (maskMode != MaskMode.FIRST6_LAST4) {
+                                Slider(
+                                    value = keepN.toFloat(),
+                                    onValueChange = { keepN = it.roundToInt() },
+                                    valueRange = 0f..16f,
+                                    steps = 15
+                                )
+                            }
                             Text(
-                                text = if (effectiveKeep == 0) "Masking every digit"
-                                else "Keeping last $effectiveKeep",
+                                text = when (maskMode) {
+                                    MaskMode.FIRST6_LAST4 -> "Showing first 6 + last 4"
+                                    MaskMode.LAST ->
+                                        if (keepN == 0) "Masking every digit" else "Keeping last $keepN"
+                                    MaskMode.FIRST ->
+                                        if (keepN == 0) "Masking every digit" else "Keeping first $keepN"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = colors.onSurfaceVariant
                             )
@@ -422,7 +559,7 @@ class MainActivity : ComponentActivity() {
                         .fillMaxWidth()
                         .padding(horizontal = 14.dp, vertical = 12.dp)
                         .imePadding(),
-                    enabled = hasInput,
+                    enabled = canCommit,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Success,
                         contentColor = colors.onSecondary
@@ -430,9 +567,17 @@ class MainActivity : ComponentActivity() {
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         commitPulse++
+                        if (screenMode == ScreenMode.Batch) {
+                            clipboard.setText(AnnotatedString(batchMasked))
+                            scope.launch { snackbarHostState.showSnackbar("Copied masked text") }
+                        }
                         onCommit()
                     }
-                ) { Text(text = getString(R.string.submit)) }
+                ) {
+                    Text(
+                        text = if (screenMode == ScreenMode.Single) "Mask card" else "Copy masked text"
+                    )
+                }
             }
         }
     }
@@ -483,7 +628,6 @@ private fun CardHero(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top
             ) {
-                // EMV chip
                 Box(
                     modifier = Modifier
                         .size(width = 40.dp, height = 30.dp)
