@@ -45,9 +45,17 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Google's official AdMob TEST unit IDs — never serve real ads in debug (avoids policy strikes).
+            buildConfigField "String", "ADMOB_BANNER", "\"ca-app-pub-3940256099942544/6300978111\""
+            buildConfigField "String", "ADMOB_INTERSTITIAL", "\"ca-app-pub-3940256099942544/1033173712\""
+        }
         release {
             minifyEnabled = true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Production AdMob unit IDs (only used in signed release builds).
+            buildConfigField "String", "ADMOB_BANNER", "\"ca-app-pub-4541063798492496/2428797453\""
+            buildConfigField "String", "ADMOB_INTERSTITIAL", "\"ca-app-pub-4541063798492496/3877610492\""
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.release
             }
@@ -62,6 +70,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
