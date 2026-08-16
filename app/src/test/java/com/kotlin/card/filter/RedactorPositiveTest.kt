@@ -143,4 +143,24 @@ class RedactorPositiveTest {
         val text = "Call 012-3456789 or mail a.b@c.com about 4111111111111111 and 4222222222222"
         assertEquals("1 email · 1 phone · 2 cards", summarizeCounts(counts(text)))
     }
+
+    // ── Known residuals, pinned so they cannot drift unnoticed ────────────────
+
+    @Test
+    fun `a reference number shaped exactly like an IC is over-masked, not under-masked`() {
+        // Found by an adversarial sweep, kept deliberately.
+        //
+        // `000123456789` parses as a structurally valid MyKad: YY=00, MM=01,
+        // DD=23, birthplace=45, serial 6789. A MyKad number carries no checksum,
+        // so nothing distinguishes it from this purchase-order tail without
+        // context the redactor does not have.
+        //
+        // The failure is in the safe direction and that is why it stays: the
+        // card-only engine revealed the last four digits here, and the IC rule
+        // reveals none. Tightening NRIC to exclude it would mean loosening the
+        // structural test, which trades a harmless over-mask for the risk of
+        // leaving a real IC readable. Not a trade worth making in a redactor.
+        assertEquals("PO-2026-************", redact("PO-2026-000123456789"))
+        assertEquals("PO-****-********6789", maskAllInText("PO-2026-000123456789", '*', 0, 4))
+    }
 }

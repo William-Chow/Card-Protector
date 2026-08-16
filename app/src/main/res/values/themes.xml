@@ -13,4 +13,22 @@
         <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
         <!-- Customize your theme here. -->
     </style>
+
+    <!--
+      Theme for RedactActivity, which floats over the app the selection came
+      from rather than replacing it.
+
+      Declared here only, and NOT duplicated into values-night. Style parents are
+      resolved per-configuration at runtime, so in night mode this inherits the
+      values-night copy of Theme.CreditCardFiltering automatically — and its
+      MaterialComponents ancestry, which the in-app-update Snackbar needs, comes
+      along with it.
+    -->
+    <style name="Theme.CreditCardFiltering.Sheet" parent="Theme.CreditCardFiltering">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
 </resources>

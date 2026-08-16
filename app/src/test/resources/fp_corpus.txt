@@ -47,3 +47,37 @@ See www.example.com for details.
 Fee is RM120 per month, 4 sessions
 Temperature 36.5 C at 09:15
 Page 12 of 240, section 3.4.1
+
+# Added from an adversarial sweep run against the finished engine. Every line
+# below was checked to produce byte-identical output to the card-only masker
+# before being added, so each one is a gate that a future detector has to clear.
+
+# Malaysian prose, the market this app is aimed at
+Yuran bulanan RM250.00 untuk 4 sesi
+Kelas pada 16/08/2026 jam 2.30 petang
+Alamat: No 12, Jalan SS15/4B, 47500 Subang Jaya, Selangor
+Tingkatan 4, Kelas 4A, 30 pelajar
+# Published customer-service lines: the 1-300/1-800 post-filter is what spares these
+Tel pejabat 1-800-88-1234 (toll free)
+Hotline 1300-88-5678
+# Timestamps, versions and section numbers — the classic dotted/dashed decoys
+2026-08-16T14:30:45Z
+Released v2.10.100.25 on 2026-01-02
+Section 3.4.1.2 of the manual
+Between 09:15 and 17:45
+Chrome/120.0.6099.234 Safari/537.36
+# Money and coordinates
+Total: RM 1,250.00 (incl. 6% SST)
+USD 1,234,567.89
+Coordinates 3.1390, 101.6869
+# Filenames must never be read as bare domains
+The file is app.build.gradle.kts
+# Secret keywords in ordinary prose, with no '=' or ':' to trigger the rule
+It was a token gesture of goodwill
+The password is stored securely
+Secret Santa draw is on Friday
+# A 12-digit run whose month is 13 — near-miss NRIC, must fall through to CARD
+991331145678
+# Accepted false negative, pinned so it is visible: the all-single-digit-octet
+# rule that kills "1.2.3.4" also declines this real public resolver.
+8.8.8.8
