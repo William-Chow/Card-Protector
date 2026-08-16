@@ -55,6 +55,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -113,9 +115,27 @@ import kotlinx.coroutines.launch
 
 private enum class ScreenMode { Single, Batch }
 
+// Enums go into saved state as ordinals rather than through the autoSaver's
+// Serializable path, which would put a whole class name in the Bundle.
+private val ScreenModeSaver =
+    Saver<ScreenMode, Int>(save = { it.ordinal }, restore = { ScreenMode.entries[it] })
+private val MaskModeSaver =
+    Saver<MaskMode, Int>(save = { it.ordinal }, restore = { MaskMode.entries[it] })
+private val ThemeModeSaver =
+    Saver<ThemeMode, Int>(save = { it.ordinal }, restore = { ThemeMode.entries[it] })
+
 class MainActivity : ComponentActivity() {
 
     private var mInterstitialAd: InterstitialAd? = null
+
+    /**
+     * The share / selection payload, held as state rather than read inline so a
+     * second share landing on a live instance (see [onNewIntent]) re-seeds the
+     * screen. [shareToken] is bumped on every delivery, which is what lets the
+     * composable tell a fresh share apart from one it has already consumed.
+     */
+    private var sharedText by mutableStateOf<String?>(null)
+    private var shareToken by mutableStateOf(0)
 
     private lateinit var inAppUpdate: InAppUpdate
     private val appUpdateResultLauncher = registerForActivityResult(
@@ -126,9 +146,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val sharedText = parseSharedText(intent)
+        consumeSharedText(intent)
         setContent {
-            var themeMode by remember { mutableStateOf(ThemeMode.System) }
+            var themeMode by rememberSaveable(stateSaver = ThemeModeSaver) {
+                mutableStateOf(ThemeMode.System)
+            }
             val darkTheme = when (themeMode) {
                 ThemeMode.System -> isSystemInDarkTheme()
                 ThemeMode.Dark -> true
@@ -137,6 +159,7 @@ class MainActivity : ComponentActivity() {
             CardProTheme(darkTheme = darkTheme) {
                 MainScreen(
                     sharedText = sharedText,
+                    shareToken = shareToken,
                     onCommit = { showInterstitial() },
                     themeMode = themeMode,
                     onThemeChange = { themeMode = it }
@@ -150,6 +173,27 @@ class MainActivity : ComponentActivity() {
             updateLauncher = appUpdateResultLauncher,
             onUpdateFlowFailed = { }
         )
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeSharedText(intent)
+    }
+
+    /**
+     * Lift the payload out of [source] and hand it to the UI exactly once.
+     *
+     * The Activity's own `intent` is then replaced with an empty one: it holds
+     * an unmasked card number otherwise, and a recreated instance re-reads that
+     * same field. Nothing leaves the device either way — this only shortens how
+     * long the plaintext sits in a field we control.
+     */
+    private fun consumeSharedText(source: Intent) {
+        val text = parseSharedText(source) ?: return
+        sharedText = text
+        shareToken++
+        intent = Intent()
     }
 
     /** Text handed to us by a SEND share or the PROCESS_TEXT selection action. */
@@ -217,6 +261,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun MainScreen(
         sharedText: String?,
+        shareToken: Int,
         onCommit: () -> Unit,
         themeMode: ThemeMode,
         onThemeChange: (ThemeMode) -> Unit
@@ -228,24 +273,51 @@ class MainActivity : ComponentActivity() {
         val scope = rememberCoroutineScope()
         val colors = MaterialTheme.colorScheme
 
-        val sharedCount = remember(sharedText) { sharedText?.let { countCards(it) } ?: 0 }
-
-        var screenMode by remember {
-            mutableStateOf(if (sharedCount > 1) ScreenMode.Batch else ScreenMode.Single)
+        // Everything the user typed or chose goes through rememberSaveable, so a
+        // theme flip or a rotation — both of which destroy and recreate the
+        // Activity — no longer wipes the screen. `remember` survives
+        // recomposition only; saved state is what survives recreation.
+        //
+        // Privacy note: this puts the card number into the saved-instance-state
+        // Bundle, which crosses a Binder into system_server. It is not written to
+        // disk (persistableMode defaults to persistRootOnly, which persists only
+        // the launch Intent) and is not covered by allowBackup. It never leaves
+        // the device, so the "On-device" badge still holds.
+        var screenMode by rememberSaveable(stateSaver = ScreenModeSaver) {
+            mutableStateOf(ScreenMode.Single)
         }
-        var cardNumber by remember {
-            mutableStateOf(sharedText?.let { extractFirstCardDigits(it) } ?: "")
-        }
-        var batchText by remember {
-            mutableStateOf(if (sharedCount > 1) sharedText.orEmpty() else "")
-        }
-        var maskMode by remember { mutableStateOf(MaskMode.LAST) }
-        var keepN by remember { mutableStateOf(4) }
-        var maskSymbol by remember { mutableStateOf('*') }
+        var cardNumber by rememberSaveable { mutableStateOf("") }
+        var batchText by rememberSaveable { mutableStateOf("") }
+        var maskMode by rememberSaveable(stateSaver = MaskModeSaver) { mutableStateOf(MaskMode.LAST) }
+        var keepN by rememberSaveable { mutableStateOf(4) }
+        var maskSymbolIndex by rememberSaveable { mutableStateOf(0) }
+        // Deliberately NOT saveable: it only drives the hero's bounce animation,
+        // and restoring it would replay the bounce on every theme flip.
         var commitPulse by remember { mutableStateOf(0) }
+        var consumedShareToken by rememberSaveable { mutableStateOf(0) }
 
         val symbols = listOf('*', '•', '#', 'x', '$', '!', '@', '%', '^', '&')
+        val maskSymbol = symbols[maskSymbolIndex.coerceIn(symbols.indices)]
         val (keepLeading, keepTrailing) = keepCounts(maskMode, keepN.coerceIn(0, MAX_REVEALED_DIGITS))
+
+        // Seed from a share exactly once per delivery. This runs as an effect
+        // rather than in the state initializers above on purpose: initializers
+        // are skipped on restore, so seeding there worked, but a share that had
+        // been edited and then survived a recreation would quietly get the
+        // original shared value written back over the edit. Gating on a token
+        // that itself lives in saved state removes that path entirely.
+        LaunchedEffect(shareToken) {
+            val text = sharedText
+            if (text == null || shareToken == consumedShareToken) return@LaunchedEffect
+            consumedShareToken = shareToken
+            if (countCards(text) > 1) {
+                screenMode = ScreenMode.Batch
+                batchText = text
+            } else {
+                screenMode = ScreenMode.Single
+                cardNumber = extractFirstCardDigits(text)
+            }
+        }
 
         val singleMasked = remember(cardNumber, maskSymbol, keepLeading, keepTrailing) {
             maskNumber(cardNumber, maskSymbol, keepLeading, keepTrailing)
@@ -541,11 +613,11 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                symbols.forEach { symbol ->
+                                symbols.forEachIndexed { index, symbol ->
                                     FilterChip(
-                                        selected = maskSymbol == symbol,
+                                        selected = maskSymbolIndex == index,
                                         onClick = {
-                                            maskSymbol = symbol
+                                            maskSymbolIndex = index
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         },
                                         label = { Text(symbol.toString()) }
