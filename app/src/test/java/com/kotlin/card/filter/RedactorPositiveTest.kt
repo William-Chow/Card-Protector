@@ -114,6 +114,70 @@ class RedactorPositiveTest {
         assertEquals("Blocked 203.***.***.*** at the edge", redact("Blocked 203.0.113.45 at the edge"))
     }
 
+    @Test
+    fun `an ordinary word in front of an address does not spare it`() {
+        // The enumerator list was written to spare "Build 1.10.4.2", and it grew
+        // to forty-three words. Eleven of them — release, update, patch, rule,
+        // table, item, no, level, part, step, phase — are ordinary English in
+        // exactly the support tickets and server logs this app is pointed at, and
+        // each one was silently vetoing the masking of a real public address.
+        // A false positive that leaves data on screen is not a false positive in
+        // the harmless direction.
+        for (word in listOf("Release", "Update", "Patch", "Rule", "Table", "Item", "No", "Level", "Part", "Step", "Phase")) {
+            assertEquals(
+                "$word 203.0.113.45 was masked as: ${redact("$word 203.0.113.45 is now live")}",
+                mapOf(SensitiveType.IPV4 to 1),
+                counts("$word 203.0.113.45 is now live")
+            )
+        }
+        assertEquals("Release 203.***.***.*** is now live", redact("Release 203.0.113.45 is now live"))
+        assertEquals("Item 203.***.***.*** in the allowlist", redact("Item 203.0.113.45 in the allowlist"))
+        // They keep their original job, because a version-shaped quad behind one
+        // of them still reads as an enumeration.
+        assertEquals(emptyMap<SensitiveType, Int>(), counts("Table 12.4.5.6 lists the fees"))
+        assertEquals(emptyMap<SensitiveType, Int>(), counts("Patch 4.10.200.3 is mandatory"))
+    }
+
+    @Test
+    fun `a card-length run is masked as one number, not as a matched part and a tail`() {
+        // The family two rounds of review found. `123456789012` and the PAN are
+        // one twenty-eight digit run once the no-break space folds, the card
+        // pattern's nineteen-digit ceiling stopped the match inside the PAN's
+        // third group, and the eight digits past it were below the twelve-digit
+        // floor so nothing else ever claimed them. At the slider's top the whole
+        // PAN came back verbatim, with the counts reading "1 card found".
+        assertEquals(
+            "Akaun ************ **** **** **** 1111",
+            redact("Akaun 123456789012 4111 1111 1111 1111")
+        )
+        assertEquals(
+            mapOf(SensitiveType.CARD to 1),
+            counts("Akaun 123456789012 4111 1111 1111 1111")
+        )
+        // At the slider's ceiling, ten digits of the run — not sixteen of the PAN.
+        assertEquals(
+            "Akaun ************ **** **11 1111 1111",
+            Redactor.redactAllInText(
+                "Akaun 123456789012 4111 1111 1111 1111",
+                MaskPolicy('*', 0, MAX_REVEALED_DIGITS)
+            ).output
+        )
+    }
+
+    @Test
+    fun `a leftover fragment of a run is masked whole, not to its own last four`() {
+        // Nothing offers a candidate for eleven digits: they are one short of the
+        // card pattern's floor, so the resolver's re-offer loop has nothing to
+        // re-offer and the run sweep is what covers them. They reveal nothing,
+        // because the last four digits of a fragment are four digits from the
+        // middle of somebody's number rather than the tail of a card.
+        assertEquals("******-**-**** ***********", redact("901231-14-5678 41111111111"))
+        assertEquals(
+            mapOf(SensitiveType.MY_NRIC to 1, SensitiveType.CARD to 1),
+            counts("901231-14-5678 41111111111")
+        )
+    }
+
     // ── Secrets ───────────────────────────────────────────────────────────────
 
     @Test
@@ -181,7 +245,14 @@ class RedactorPositiveTest {
         // reveals none. Tightening NRIC to exclude it would mean loosening the
         // structural test, which trades a harmless over-mask for the risk of
         // leaving a real IC readable. Not a trade worth making in a redactor.
-        assertEquals("PO-2026-************", redact("PO-2026-000123456789"))
+        //
+        // The `2026` goes too, and used to survive. It is not a separate value:
+        // `2026-000123456789` is one sixteen-digit run, the IC rule took twelve
+        // digits out of the middle of it, and what is left is a fragment of a
+        // number rather than a year — the run sweep in `Redactor` masks it whole.
+        // The card-only masker hides it as well, so this is the *same* answer
+        // reached for a better reason.
+        assertEquals("PO-****-************", redact("PO-2026-000123456789"))
         assertEquals("PO-****-********6789", maskAllInText("PO-2026-000123456789", '*', 0, 4))
     }
 }

@@ -83,8 +83,8 @@ fun ipv4Public(value: String): Boolean {
 
 /**
  * Words that introduce a *numbered thing* — a version, a build, a clause — in
- * English or Malay. A dotted quad behind one of these is an enumeration, not an
- * address, whatever its octets happen to be.
+ * English or Malay, and can introduce nothing else. A dotted quad behind one of
+ * these is an enumeration, not an address, whatever its octets happen to be.
  *
  * Nothing here plausibly introduces a real address in the text this app sees;
  * the words that do (`ip`, `host`, `server`, `gateway`, `dns`) are deliberately
@@ -92,12 +92,49 @@ fun ipv4Public(value: String): Boolean {
  */
 private val ENUMERATOR_WORDS: Set<String> = setOf(
     "v", "ver", "version", "versions", "versi",
-    "build", "builds", "rev", "revision", "release", "releases", "patch", "update",
+    "build", "builds", "rev", "revision",
     "section", "sec", "seksyen", "bahagian", "chapter", "bab",
-    "clause", "fasal", "article", "perkara", "part", "paragraph", "para",
-    "item", "step", "langkah", "figure", "fig", "rajah", "table", "jadual",
-    "appendix", "lampiran", "schedule", "exhibit", "rule", "no", "nos", "level", "phase"
+    "clause", "fasal", "article", "perkara", "paragraph", "para",
+    "langkah", "figure", "fig", "rajah", "jadual",
+    "appendix", "lampiran", "schedule", "exhibit"
 )
+
+/**
+ * Words that *usually* introduce a numbered thing but are ordinary English in
+ * their own right, so they only suppress a quad that also looks like a version.
+ *
+ * All of these used to sit in [ENUMERATOR_WORDS] unconditionally, and that was a
+ * false positive pointing the wrong way — the wrong way being the direction that
+ * leaves real data on screen. "Release 203.0.113.45 is now live", "Item
+ * 203.0.113.45 in the allowlist", "Rule 203.0.113.45", "Level 203.0.113.45" are
+ * exactly the support-ticket and log sentences this app is pointed at, and every
+ * one of them left a genuine public address in the clear. A word that can
+ * introduce an address must not be allowed to veto masking on its own.
+ */
+private val WEAK_ENUMERATOR_WORDS: Set<String> = setOf(
+    "release", "releases", "update", "updates", "patch", "patches",
+    "rule", "rules", "table", "item", "items", "no", "nos",
+    "level", "part", "step", "phase"
+)
+
+/**
+ * Whether a dotted quad reads as a version number rather than an address: both
+ * leading components below one hundred.
+ *
+ * Not a proof, and not meant to be — it is the second half of a two-part test
+ * whose first half is a word like `patch` or `table` sitting right in front. A
+ * real address can look like this (`45.33.32.156` does), so a weak word plus a
+ * low-numbered quad is still suppressed and that residual is deliberate: what
+ * matters is that no weak word can suppress `203.0.113.45`, which is the shape
+ * an address in a support ticket actually has.
+ */
+private fun ipv4VersionShaped(value: String): Boolean {
+    val parts = value.split('.')
+    if (parts.size != 4) return false
+    val first = parts[0].toIntOrNull() ?: return false
+    val second = parts[1].toIntOrNull() ?: return false
+    return first < 100 && second < 100
+}
 
 /**
  * Whether the dotted quad at [start] in [text] is introduced by an enumerator
@@ -113,8 +150,11 @@ private val ENUMERATOR_WORDS: Set<String> = setOf(
  * Only the immediately preceding word counts, optionally through a `:`, `#` or
  * `-`. A full stop is deliberately *not* crossed, so a sentence that happens to
  * end in "…section." does not swallow the address that starts the next one.
+ *
+ * [quad] is the dotted quad itself, needed because half the vocabulary — see
+ * [WEAK_ENUMERATOR_WORDS] — only counts when the number also reads as a version.
  */
-fun ipv4Enumerated(text: String, start: Int): Boolean {
+fun ipv4Enumerated(text: String, start: Int, quad: String): Boolean {
     var index = start - 1
     var separated = false
     while (index >= 0 && (text[index] == ' ' || text[index] == '\t')) {
@@ -130,7 +170,9 @@ fun ipv4Enumerated(text: String, start: Int): Boolean {
     val wordEnd = index
     while (index >= 0 && text[index].isLetter()) index--
     if (index == wordEnd) return false
-    return text.substring(index + 1, wordEnd + 1).lowercase() in ENUMERATOR_WORDS
+    val word = text.substring(index + 1, wordEnd + 1).lowercase()
+    if (word in ENUMERATOR_WORDS) return true
+    return word in WEAK_ENUMERATOR_WORDS && ipv4VersionShaped(quad)
 }
 
 /**

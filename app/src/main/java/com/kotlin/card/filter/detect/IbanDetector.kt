@@ -36,8 +36,40 @@ object IbanDetector : Detector {
 
     override fun find(normalized: String): Sequence<Candidate> =
         IBAN_REGEX.findAll(normalized)
-            .filter { ibanMod97(it.value.replace(" ", "")) }
-            .map { Candidate(it.range) }
+            .mapNotNull { match -> longestValidIban(match)?.let { Candidate(match.range.first..it) } }
+
+    /**
+     * The end index of the longest prefix of [match] that passes mod-97, or
+     * `null` if none does.
+     *
+     * `find` gets exactly one shot per starting position, and the pattern's
+     * `(?:[ ]?[A-Z0-9]){11,30}` runs happily across the single spaces of a
+     * *neighbouring* number: on `GB29NWBK60161331926819 4111 1111 1111 1111` the
+     * greedy match ate three groups of the card, mod-97 failed on the result, and
+     * the IBAN was reported as absent — no IBAN in the counts, and the country's
+     * bank and branch codes left in the clear. The retry walks back to each space
+     * inside the match, longest first, so the real IBAN is found and the card is
+     * left for the card detector.
+     *
+     * Only space boundaries are tried, and that is deliberate. Truncating at an
+     * arbitrary character would offer dozens of candidates to a checksum that
+     * passes one in ninety-seven by chance, which is how a checksum stops being
+     * evidence; the failure being fixed is specifically the match running *across
+     * a space* into a neighbour, so those are the only places worth looking.
+     */
+    private fun longestValidIban(match: MatchResult): Int? {
+        val value = match.value
+        val start = match.range.first
+        val ends = sequenceOf(value.length) +
+            value.indices.reversed().asSequence().filter { value[it] == ' ' }
+        for (length in ends) {
+            if (length <= 0 || !value[length - 1].isLetterOrDigit()) continue
+            val compact = value.take(length).replace(" ", "")
+            if (compact.length !in 15..34) continue
+            if (ibanMod97(compact)) return start + length - 1
+        }
+        return null
+    }
 
     /** Country code and last four; the BBAN body — letters included — goes. */
     override fun redact(original: String, candidate: Candidate, policy: MaskPolicy): String =

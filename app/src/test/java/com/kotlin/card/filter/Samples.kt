@@ -64,3 +64,65 @@ fun maskCount(text: String, glyph: Char): Int = text.count { it == glyph }
 
 /** How many digits survived masking. */
 fun digitCount(text: String): Int = text.count { it.isDigit() }
+
+/**
+ * The twenty-four characters [normalizeForScan] folds onto `' '` or `'-'`.
+ *
+ * These are the whole reason this file needed a second corpus. The engine scans
+ * the *normalized* string, so every one of them joins two numbers into a single
+ * digit run — while the shipped `CARD_REGEX`, which reads the raw text, sees two
+ * separate numbers. Every sample in this file was ASCII-only, so the entire
+ * folded family was invisible to the suite written to catch adjacency leaks.
+ *
+ * Kept in one list, derived from the same ranges [normalizeForScan] folds, so a
+ * new fold cannot be added there without a line here.
+ */
+val FOLDED_SEPARATORS: List<Char> = buildList {
+    add('\u00A0'); add('\u202F')                            // no-break, narrow no-break
+    for (ch in '\u2000'..'\u200A') add(ch)                  // en/em/thin/figure and the rest
+    add('\u200B'); add('\u200C'); add('\u200D'); add('\uFEFF') // zero-width, non-joiner, joiner, BOM
+    for (ch in '\u2010'..'\u2015') add(ch)                  // hyphen through horizontal bar
+    add('\u2212')                                           // minus sign
+}
+
+/** Every folded separator, plus the two ASCII characters they fold onto. */
+val ALL_SEPARATORS: List<Char> = FOLDED_SEPARATORS + listOf(' ', '-')
+
+/** [text] with every ASCII space and dash replaced by [separator]. */
+fun withSeparator(text: String, separator: Char): String =
+    buildString(text.length) {
+        for (ch in text) append(if (ch == ' ' || ch == '-') separator else ch)
+    }
+
+/**
+ * The operands of an adjacency: values that are sensitive on their own, plus the
+ * bare numeric runs that only become dangerous next to something else.
+ */
+val ADJACENCY_OPERANDS: List<String> = listOf(
+    "4111 1111 1111 1111",
+    "4111111111111111",
+    "4222222222222",
+    "123456789012",
+    "41111111111",
+    "901231-14-5678",
+    "012-3456789",
+    "+60123456789",
+    "GB29NWBK60161331926819",
+    "MT84MALT011000012345MTLCAST001S",
+    "203.0.113.45",
+    "a.b@c.com",
+    "AKIAIOSFODNN7EXAMPLE"
+)
+
+/**
+ * Every ordered pair of [ADJACENCY_OPERANDS] joined by [separator] — both orders,
+ * because which value the resolver claims first changes which one is left over.
+ */
+fun adjacencyPairs(separator: Char): Sequence<String> = sequence {
+    for (left in ADJACENCY_OPERANDS.indices) {
+        for (right in ADJACENCY_OPERANDS.indices) {
+            if (left == right) continue
+            yield(ADJACENCY_OPERANDS[left] + separator + ADJACENCY_OPERANDS[right])
+        }
+    }
+}

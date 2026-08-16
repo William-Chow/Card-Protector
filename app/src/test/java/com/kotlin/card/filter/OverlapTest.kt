@@ -138,4 +138,91 @@ class OverlapTest {
             Redactor.redactAllInText("4111111111111111@x.com", MaskPolicy('*')).output
         )
     }
+
+    @Test
+    fun `the floor is reported, not just applied`() {
+        // These said "1 link" and "1 email". The masking was right and the count
+        // was a lie by omission: the reason the output looks like that is that a
+        // PAN was hidden inside it, and a user reading "1 link found" has been
+        // told the opposite of the thing that matters most.
+        assertEquals(
+            mapOf(SensitiveType.URL to 1, SensitiveType.CARD to 1),
+            counts("https://4111111111111111.example.com/x")
+        )
+        assertEquals(
+            mapOf(SensitiveType.EMAIL to 1, SensitiveType.CARD to 1),
+            counts("a@4111111111111111.com")
+        )
+        assertEquals("1 link · 1 card", summarizeCounts(counts("https://4111111111111111.example.com/x")))
+        // …and a link that hides nothing card-shaped still counts as one link.
+        assertEquals(
+            mapOf(SensitiveType.URL to 1),
+            counts("https://api.example.com/v1/4111111111111111?ip=203.0.113.45")
+        )
+    }
+
+    @Test
+    fun `two cards one space apart are counted as two`() {
+        // One run, therefore one claim — but two numbers, and "1 card found" over
+        // a result holding two is the counter under-reporting the only thing it
+        // exists to report. The CARD count is what the shipped masker would have
+        // counted across the same span rather than a flat one-per-claim.
+        assertEquals(mapOf(SensitiveType.CARD to 2), counts("4111111111111111 4111111111111111"))
+        assertEquals(mapOf(SensitiveType.CARD to 2), counts("4111111111111111 378282246310005"))
+        assertEquals("2 cards", summarizeCounts(counts("4111111111111111 4111111111111111")))
+        // A single card written in groups is still one card, not four.
+        assertEquals(mapOf(SensitiveType.CARD to 1), counts("4111 1111 1111 1111"))
+    }
+
+    @Test
+    fun `masking is never silent, and a count never means nothing was masked`() {
+        // The counts are not decoration: `RedactDecision` gates the whole
+        // PROCESS_TEXT sheet on `counts.isNotEmpty()`, so a mask with no count is
+        // a mask the user is never shown, and a count with no mask offers to
+        // "Replace selection" with text that is identical to what it replaces.
+        for (separator in ALL_SEPARATORS) {
+            for (text in adjacencyPairs(separator) + SENSITIVE_SAMPLES.map { withSeparator(it, separator) }) {
+                for ((leading, trailing) in listOf(0 to 0, 0 to 4, 6 to 4, 0 to MAX_REVEALED_DIGITS)) {
+                    val result = Redactor.redactAllInText(text, MaskPolicy('*', leading, trailing))
+                    if (result.output != text) {
+                        assertEquals(
+                            "keep=$leading/$trailing masked \"$text\" into \"${result.output}\" " +
+                                "and reported nothing",
+                            true,
+                            result.counts.isNotEmpty()
+                        )
+                    } else {
+                        assertEquals(
+                            "keep=$leading/$trailing reported ${result.counts} for \"$text\" " +
+                                "but changed nothing",
+                            emptyMap<SensitiveType, Int>(),
+                            result.counts
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `an IBAN is still found when a grouped number follows it`() {
+        // IBAN_REGEX's `(?:[ ]?[A-Z0-9]){11,30}` walks straight across the single
+        // spaces of the card behind it; mod-97 then fails on the over-long string
+        // and `find` never retried a shorter one, so the IBAN was reported as
+        // absent and its bank and branch codes stayed on screen.
+        assertEquals(
+            mapOf(SensitiveType.IBAN to 1, SensitiveType.CARD to 1),
+            counts("GB29NWBK60161331926819 4111 1111 1111 1111")
+        )
+        assertEquals(
+            "GB****************6819 **** **** **** 1111",
+            Redactor.redactAllInText("GB29NWBK60161331926819 4111 1111 1111 1111", MaskPolicy('*')).output
+        )
+        // The printed grouping is the form an IBAN actually arrives in, and it
+        // has the same shape of neighbour problem.
+        assertEquals(
+            mapOf(SensitiveType.IBAN to 1, SensitiveType.CARD to 1),
+            counts("GB29 NWBK 6016 1331 9268 19 4111 1111 1111 1111")
+        )
+    }
 }

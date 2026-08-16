@@ -23,6 +23,14 @@ import org.junit.Test
  * slider position: **never fewer masked digits than the shipped card-only
  * behaviour**, and the card is named in the counts so the UI cannot claim
  * otherwise.
+ *
+ * **The shapes below were ASCII-only, and that was the hole a second review
+ * walked through.** Twenty-four Unicode characters fold onto `' '` or `'-'`
+ * before a detector sees them, so each one makes a collision the *engine* sees
+ * and the oracle does not — and a test whose separator is always a plain space
+ * is testing the one arrangement where the two agree about where a number ends.
+ * Every case here now runs against all of them; [CardRunCeilingTest] is where
+ * the absolute ceiling those shapes broke is gated.
  */
 class AdjacencyLeakTest {
 
@@ -37,6 +45,23 @@ class AdjacencyLeakTest {
         "GB29NWBK60161331926819 4111111111111111",
         "Ali 901231-14-5678 4111 1111 1111 1111"
     )
+
+    /**
+     * The same collisions with the value boundary written as each of the
+     * twenty-four folded characters — the family the ASCII-only list above could
+     * not express. Only the boundary moves; the values keep their own ASCII
+     * punctuation, so an IC still looks like an IC.
+     */
+    private val foldedCollisions: List<String> = FOLDED_SEPARATORS.flatMap { separator ->
+        listOf(
+            "901231-14-5678${separator}4111111111111111",
+            "4111111111111111${separator}901231-14-5678",
+            "012-3456789${separator}4111 1111 1111 1111",
+            "GB29NWBK60161331926819${separator}4111 1111 1111 1111",
+            "Akaun 123456789012${separator}4111 1111 1111 1111",
+            "RM 4222222222222${separator}4111 1111 1111 1111 terima kasih"
+        )
+    }
 
     /** The shipped behaviour this engine may never fall below. */
     private fun cardOnlyOracle(text: String, leading: Int, trailing: Int): String =
@@ -65,12 +90,37 @@ class AdjacencyLeakTest {
 
     @Test
     fun `the PAN itself never survives, whatever the slider says`() {
-        for (text in collisions) {
+        for (text in collisions + foldedCollisions) {
             for ((leading, trailing) in ALL_KEEP_COUNTS) {
                 val output = Redactor.redactAllInText(text, MaskPolicy('*', leading, trailing)).output
                 assertFalse(
                     "keep=$leading/$trailing on \"$text\" left the PAN in: $output",
                     output.filter { it.isDigit() }.contains("4111111111111111")
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `a folded separator is still a collision, and the card is still named`() {
+        // The oracle comparison cannot be made here, and that is the finding
+        // rather than a gap in the test: the oracle reads the *raw* text, where a
+        // no-break space is not a separator, so it sees two short numbers where
+        // the engine sees one long one. Comparing digit counts against it would
+        // measure agreement about run boundaries, not about privacy. What is
+        // asserted instead is what the UI promises — a card was found and said so
+        // — with the absolute ceiling gated in CardRunCeilingTest.
+        for (text in foldedCollisions) {
+            for ((leading, trailing) in ALL_KEEP_COUNTS) {
+                val result = Redactor.redactAllInText(text, MaskPolicy('*', leading, trailing))
+                assertTrue(
+                    "keep=$leading/$trailing on \"$text\" reported ${result.counts} — " +
+                        "no CARD, so the UI would tell the user no card was found",
+                    result.counts.containsKey(SensitiveType.CARD)
+                )
+                assertTrue(
+                    "keep=$leading/$trailing on \"$text\" masked nothing: ${result.output}",
+                    result.output.contains('*')
                 )
             }
         }

@@ -71,6 +71,12 @@ class ValidatorsTest {
         // Every octet a single digit: a version, a list, a score.
         assertFalse(ipv4Public("1.2.3.4"))
         assertFalse(ipv4Public("9.9.9.9"))
+        // And the cost of that rule, named here so it is not misattributed: the
+        // public resolvers are declined by *this* check and not by the
+        // enumerator-word list, so trimming that list — which was done, because
+        // it was suppressing real addresses — does not and cannot recover them.
+        assertFalse(ipv4Public("8.8.8.8"))
+        assertFalse(ipv4Public("1.1.1.1"))
         // Private and reserved: masking these hides nothing and ruins a log.
         assertFalse(ipv4Public("10.0.0.5"))
         assertFalse(ipv4Public("172.16.0.1"))
@@ -98,7 +104,7 @@ class ValidatorsTest {
             "patch #4.10.200.3"
         )) {
             val at = line.indexOfFirst { it.isDigit() }
-            assertTrue(line, ipv4Enumerated(line, at))
+            assertTrue(line, ipv4Enumerated(line, at, quadAt(line, at)))
         }
     }
 
@@ -115,9 +121,38 @@ class ValidatorsTest {
             "Supersection 203.0.113.45"
         )) {
             val at = line.indexOfFirst { it.isDigit() }
-            assertFalse(line, ipv4Enumerated(line, at))
+            assertFalse(line, ipv4Enumerated(line, at, quadAt(line, at)))
         }
     }
+
+    @Test
+    fun `an ordinary word cannot veto masking on its own`() {
+        // The eleven words that used to suppress unconditionally. Each one is
+        // ordinary English in exactly the support tickets and logs this app is
+        // pointed at, and each one was leaving a genuine public address on screen.
+        for (word in listOf(
+            "Release", "release", "Update", "Patch", "Rule", "Table",
+            "Item", "No", "Level", "Part", "Step", "Phase"
+        )) {
+            val line = "$word 203.0.113.45 is the origin"
+            val at = line.indexOfFirst { it.isDigit() }
+            assertFalse(line, ipv4Enumerated(line, at, quadAt(line, at)))
+        }
+    }
+
+    @Test
+    fun `an ordinary word still suppresses a version-shaped quad`() {
+        // …and the other half of the same rule: the words stay useful for what
+        // they were added for, which was "Patch 4.10.200.3", not an address.
+        for (line in listOf("Patch 4.10.200.3 is mandatory", "Table 12.4.5.6 lists the fees")) {
+            val at = line.indexOfFirst { it.isDigit() }
+            assertTrue(line, ipv4Enumerated(line, at, quadAt(line, at)))
+        }
+    }
+
+    /** The dotted quad starting at [at] — digits and dots, nothing else. */
+    private fun quadAt(line: String, at: Int): String =
+        line.drop(at).takeWhile { it.isDigit() || it == '.' }.trimEnd('.')
 
     @Test
     fun `service lines are told apart from personal numbers`() {

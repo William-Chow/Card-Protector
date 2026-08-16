@@ -41,7 +41,7 @@ object Ipv4Detector : Detector {
 
     override fun find(normalized: String): Sequence<Candidate> =
         IPV4_REGEX.findAll(normalized)
-            .filter { ipv4Public(it.value) && !ipv4Enumerated(normalized, it.range.first) }
+            .filter { ipv4Public(it.value) && !ipv4Enumerated(normalized, it.range.first, it.value) }
             .map { Candidate(it.range) }
 
     /**

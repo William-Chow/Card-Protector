@@ -11,9 +11,19 @@ import com.kotlin.card.filter.phoneDigitsPlausible
  * Malaysian numbers in national (`03-1234 5678`, `012-345 6789`) or
  * international (`+60 12-345 6789`) form: mobile `01X`, Klang Valley `03`, and
  * the remaining `04`–`09` area codes.
+ *
+ * The second lookbehind is the fix for a leak, not a tightening for its own
+ * sake. `(?<![0-9A-Za-z+_])` accepts a dash, and a dash is exactly what sits
+ * between the fields of an IC — so in `880505-06-1234012-3456789` this pattern
+ * matched `06-1234012` *inside* the run, claimed it as somebody's phone number,
+ * masked it to the phone rule's last three digits, and left `880505` (a date of
+ * birth) and `012-3456789` (the whole real phone number) readable at every
+ * slider position. A number that starts immediately after a dash which is itself
+ * preceded by a digit is a continuation of the number in front of it, never the
+ * start of a new one.
  */
 private val MY_PHONE_REGEX = Regex(
-    """(?<![0-9A-Za-z+_])(?:\+60[ \-]?|0)""" +
+    """(?<![0-9A-Za-z+_])(?<!\d-)(?:\+60[ \-]?|0)""" +
         """(?:1[0-46-9][ \-]?\d{3,4}[ \-]?\d{4}|3[ \-]?\d{4}[ \-]?\d{4}|[4-9][ \-]?\d{3}[ \-]?\d{4})""" +
         """(?![0-9])"""
 )
@@ -24,7 +34,8 @@ private val MY_PHONE_REGEX = Regex(
  * the tiebreaker that lets a phone number outrank the card run inside it: the
  * phone span starts one character earlier, at the `+`.
  */
-private val E164_PHONE_REGEX = Regex("""(?<![0-9A-Za-z+_])\+[1-9]\d{0,2}[ \-]?\d(?:[ \-]?\d){6,13}(?![0-9])""")
+private val E164_PHONE_REGEX =
+    Regex("""(?<![0-9A-Za-z+_])(?<!\d-)\+[1-9]\d{0,2}[ \-]?\d(?:[ \-]?\d){6,13}(?![0-9])""")
 
 /**
  * Phone numbers, Malaysian first.
