@@ -1,0 +1,49 @@
+# Text that contains nothing sensitive.
+#
+# The gate is NOT "redaction leaves these untouched" — the shipped card pattern
+# already matches ISBNs, 12-digit SKUs and 12-digit substrings of git SHAs, and
+# has since it was released. The gate is that the multi-type engine reproduces
+# the shipped card-only masking on these strings *byte for byte*: the new
+# detectors must add exactly zero matches here.
+#
+# A detector that eats a line in this file gets tightened or does not ship.
+# Blank lines and lines starting with '#' are ignored.
+
+RM 1,250.00
+12.5%
+2026-08-16
+16/08/2026
+08:45
+Invoice INV-2026-0042
+Order #100234
+v1.10.4.2
+1.2.3
+1.2.3.4
+192.168.1.10
+10.0.0.5
+127.0.0.1
+Chrome/120.0.6099.234
+Room 4, Block B, Level 12
+Masking.kt
+report.pdf
+e.g. this, i.e. that, and so on etc.
+Jalan SS15/4B, 47500 Subang Jaya
+30 students, 90 marks
++ 60 more seats
+EE123456789MY
+2024-01-15 10:30:45
+1,234,567
+978-3-16-148410-0
+SKU AB123456789012
+deadbeef901231145678cafe
+MY24INV000123456789
+550e8400-e29b-41d4-a716-446655440000
+9f2c1ae4b7d3c0f18a6e5b2d9c4a7f1e3b8d6c05
+Total 250.00 for 3 items on 2026-01-02
+Meeting at 14:30 in Room 2.4
+Batch 20260816-A, qty 1200
+Visit https://example.com
+See www.example.com for details.
+Fee is RM120 per month, 4 sessions
+Temperature 36.5 C at 09:15
+Page 12 of 240, section 3.4.1

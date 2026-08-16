@@ -12,6 +12,12 @@ private val CARD_REGEX = Regex("""\d(?:[ \-]?\d){11,18}""")
  * the last four of a PAN to be displayed — so a 16-digit card always keeps at
  * least six digits hidden, whatever the slider is dragged to. It also leaves the
  * FIRST6_LAST4 preset (exactly ten) untouched for any card of 11+ digits.
+ *
+ * Every other sensitive type reuses this same clamp through [clampKeepCounts]
+ * rather than declaring its own floor, so the shipped guarantee is inherited
+ * instead of re-implemented. None of them asks for more than four, so the
+ * ceiling itself never binds outside the card path — but the "at least one
+ * character stays hidden" half of the clamp binds for all of them.
  */
 const val MAX_REVEALED_DIGITS = 10
 
@@ -60,7 +66,42 @@ fun maskNumber(account: String, maskChar: Char, keepLeading: Int, keepTrailing: 
     return sb.toString()
 }
 
-/** Mask every card-number-like run found in [text], leaving the rest untouched. */
+/**
+ * As [maskNumber], but letters are maskable too.
+ *
+ * An IBAN carries its account information in letters as well as digits, so
+ * masking only the digits would leave most of the BBAN in plain sight. Keep
+ * counts still route through [clampKeepCounts], so the same floor applies:
+ * at least one alphanumeric always stays hidden.
+ */
+fun maskAlnum(value: String, maskChar: Char, keepLeading: Int, keepTrailing: Int): String {
+    val alnumCount = value.count { it.isLetterOrDigit() }
+    if (alnumCount == 0) return value
+    val (leading, trailing) = clampKeepCounts(alnumCount, keepLeading, keepTrailing)
+    val sb = StringBuilder(value.length)
+    var alnumIndex = 0
+    for (ch in value) {
+        if (ch.isLetterOrDigit()) {
+            val revealed = alnumIndex < leading || alnumIndex >= alnumCount - trailing
+            sb.append(if (revealed) ch else maskChar)
+            alnumIndex++
+        } else {
+            sb.append(ch)
+        }
+    }
+    return sb.toString()
+}
+
+/**
+ * Mask every card-number-like run found in [text], leaving the rest untouched.
+ *
+ * **Kept deliberately, even though the UI now calls
+ * [com.kotlin.card.filter.Redactor.redactAllInText] instead.** This is the
+ * card-only regression oracle: `RedactorParityTest` asserts that the multi-type
+ * engine reproduces this function byte-for-byte on text that contains nothing
+ * sensitive, which is how new detectors are stopped from eating prices, dates,
+ * order numbers and version strings. Deleting it deletes that gate.
+ */
 fun maskAllInText(text: String, maskChar: Char, keepLeading: Int, keepTrailing: Int): String =
     CARD_REGEX.replace(text) { match ->
         maskNumber(match.value, maskChar, keepLeading, keepTrailing)
