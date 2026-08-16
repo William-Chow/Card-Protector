@@ -91,6 +91,7 @@ import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 import com.kotlin.card.BuildConfig
 import com.kotlin.card.R
 import com.kotlin.card.filter.CardTools
+import com.kotlin.card.filter.MAX_REVEALED_DIGITS
 import com.kotlin.card.filter.MaskMode
 import com.kotlin.card.filter.countCards
 import com.kotlin.card.filter.extractFirstCardDigits
@@ -102,9 +103,11 @@ import com.kotlin.card.ui.theme.CardGradMid
 import com.kotlin.card.ui.theme.CardGradTop
 import com.kotlin.card.ui.theme.CardProTheme
 import com.kotlin.card.ui.theme.Gold
+import com.kotlin.card.ui.theme.OnHeroMuted
 import com.kotlin.card.ui.theme.Success
 import com.kotlin.card.ui.theme.TextPrimary
 import com.kotlin.card.ui.theme.ThemeMode
+import com.kotlin.card.ui.theme.successAccent
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
@@ -242,7 +245,7 @@ class MainActivity : ComponentActivity() {
         var commitPulse by remember { mutableStateOf(0) }
 
         val symbols = listOf('*', '•', '#', 'x', '$', '!', '@', '%', '^', '&')
-        val (keepLeading, keepTrailing) = keepCounts(maskMode, keepN.coerceIn(0, 16))
+        val (keepLeading, keepTrailing) = keepCounts(maskMode, keepN.coerceIn(0, MAX_REVEALED_DIGITS))
 
         val singleMasked = remember(cardNumber, maskSymbol, keepLeading, keepTrailing) {
             maskNumber(cardNumber, maskSymbol, keepLeading, keepTrailing)
@@ -286,9 +289,9 @@ class MainActivity : ComponentActivity() {
                         Text(
                             text = "On-device",
                             style = MaterialTheme.typography.labelMedium,
-                            color = Success,
+                            color = colors.successAccent,
                             modifier = Modifier
-                                .border(1.dp, Success, RoundedCornerShape(50))
+                                .border(1.dp, colors.successAccent, RoundedCornerShape(50))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                         ThemeMenu(themeMode = themeMode, onThemeChange = onThemeChange)
@@ -437,7 +440,7 @@ class MainActivity : ComponentActivity() {
                                 Text(
                                     text = "$batchCount card number(s) detected",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = if (batchCount > 0) Success else colors.onSurfaceVariant
+                                    color = if (batchCount > 0) colors.successAccent else colors.onSurfaceVariant
                                 )
                                 Spacer(Modifier.height(16.dp))
                                 Text(
@@ -505,11 +508,13 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             if (maskMode != MaskMode.FIRST6_LAST4) {
+                                // Ceiling matches the masking clamp, so the readout
+                                // below never promises more than the mask reveals.
                                 Slider(
                                     value = keepN.toFloat(),
                                     onValueChange = { keepN = it.roundToInt() },
-                                    valueRange = 0f..16f,
-                                    steps = 15
+                                    valueRange = 0f..MAX_REVEALED_DIGITS.toFloat(),
+                                    steps = MAX_REVEALED_DIGITS - 1
                                 )
                             }
                             Text(
@@ -595,7 +600,8 @@ private fun CardHero(
     hasInput: Boolean,
     pulse: Int
 ) {
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    // Fixed, not colorScheme-derived: the hero is dark in both themes.
+    val muted = OnHeroMuted
     val scale = remember { Animatable(1f) }
     LaunchedEffect(pulse) {
         if (pulse > 0) {

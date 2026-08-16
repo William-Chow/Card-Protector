@@ -55,7 +55,7 @@ fun renderCardBitmap(maskedDigits: String, brand: String): Bitmap {
         typeface = Typeface.create(mono, Typeface.BOLD)
     }
     val maskedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF8893B2.toInt()
+        color = 0xFFA6B0CE.toInt() // OnHeroMuted — 5.6:1 on the gradient (WCAG AA)
         textSize = 86f
         typeface = mono
     }
@@ -69,7 +69,7 @@ fun renderCardBitmap(maskedDigits: String, brand: String): Bitmap {
     }
 
     val footer = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xFF8893B2.toInt()
+        color = 0xFFA6B0CE.toInt() // OnHeroMuted — see maskedPaint
         textSize = 38f
     }
     canvas.drawText("Masked on device · Card Pro", 90f, h - 80f, footer)
