@@ -85,6 +85,41 @@ class ValidatorsTest {
     }
 
     @Test
+    fun `a quad introduced by an enumerator word is not an address`() {
+        // The shapes the old corpus missed: neither the lookbehind nor the
+        // all-single-digit rule touches these, and both were being masked.
+        for (line in listOf(
+            "Build 1.10.4.2",
+            "Section 12.4.5.6 of the agreement",
+            "Version 2.10.4.2 shipped",
+            "Rujuk Seksyen 12.4.5.6 perjanjian",
+            "Table 12.4.5.6 lists the fees",
+            "Clause: 12.4.5.6",
+            "patch #4.10.200.3"
+        )) {
+            val at = line.indexOfFirst { it.isDigit() }
+            assertTrue(line, ipv4Enumerated(line, at))
+        }
+    }
+
+    @Test
+    fun `an address is still an address`() {
+        // None of these words introduces an enumeration, and a full stop is not
+        // crossed — so a sentence ending in "…section." cannot eat the next one.
+        for (line in listOf(
+            "Server 203.0.113.45",
+            "ip 203.0.113.45",
+            "Blocked 203.0.113.45 at the gateway",
+            "See the section. 203.0.113.45 is the origin",
+            "203.0.113.45",
+            "Supersection 203.0.113.45"
+        )) {
+            val at = line.indexOfFirst { it.isDigit() }
+            assertFalse(line, ipv4Enumerated(line, at))
+        }
+    }
+
+    @Test
     fun `service lines are told apart from personal numbers`() {
         assertFalse(phoneDigitsPlausible("1300881234"))
         assertFalse(phoneDigitsPlausible("1800123456"))

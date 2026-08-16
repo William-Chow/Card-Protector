@@ -101,6 +101,19 @@ class RedactorPositiveTest {
         assertEquals("203.***.***.***", redact("203.0.113.45"))
     }
 
+    @Test
+    fun `a numbered version or section is not an address`() {
+        // The corpus only ever held "v1.10.4.2" and "Section 3.4.1.2", which the
+        // lookbehind and the all-single-digit rule kill respectively — so between
+        // them they made this class look covered. Drop the "v", give an octet two
+        // digits, and it fired mid-sentence.
+        assertEquals("Build 1.10.4.2 on Chrome/120.0.6099.234", redact("Build 1.10.4.2 on Chrome/120.0.6099.234"))
+        assertEquals("Section 12.4.5.6 of the agreement", redact("Section 12.4.5.6 of the agreement"))
+        assertEquals(emptyMap<SensitiveType, Int>(), counts("Patch 4.10.200.3 is mandatory"))
+        // An address that is *not* introduced as a numbered thing still goes.
+        assertEquals("Blocked 203.***.***.*** at the edge", redact("Blocked 203.0.113.45 at the edge"))
+    }
+
     // ── Secrets ───────────────────────────────────────────────────────────────
 
     @Test
@@ -145,6 +158,14 @@ class RedactorPositiveTest {
     }
 
     // ── Known residuals, pinned so they cannot drift unnoticed ────────────────
+
+    @Test
+    fun `an unlabelled four-part version number is still masked`() {
+        // Pinned rather than fixed. Nothing structural separates this from a real
+        // address in 1.0.0.0/8, and every guard that would catch it drops real
+        // addresses too. It fails in the safe direction: unreadable, not unmasked.
+        assertEquals("Upgraded to 1.***.***.*** yesterday", redact("Upgraded to 1.10.4.2 yesterday"))
+    }
 
     @Test
     fun `a reference number shaped exactly like an IC is over-masked, not under-masked`() {

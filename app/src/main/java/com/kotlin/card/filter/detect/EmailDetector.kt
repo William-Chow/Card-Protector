@@ -38,13 +38,20 @@ object EmailDetector : Detector {
      *
      * The single revealed character routes through [clampKeepCounts], so a
      * one-character local part reveals nothing at all rather than handing back
-     * the address unchanged.
+     * the address unchanged. A *digit* initial is never revealed at all: it says
+     * nothing about who the address belongs to, and a local part can begin in
+     * the middle of a number the shipped card masker hides —
+     * `4111111111111111@x.com`, or a PAN that runs into an address — where
+     * revealing it would mask one digit less than the engine it replaces. (The
+     * domain side of the same rule is enforced for every type at once by the
+     * card floor in `Redactor`.)
      */
     override fun redact(original: String, candidate: Candidate, policy: MaskPolicy): String {
         val at = original.lastIndexOf('@')
         if (at <= 0) return original
         val local = original.substring(0, at)
-        val (leading, _) = clampKeepCounts(local.length, keepLeading = 1, keepTrailing = 0)
+        val (clamped, _) = clampKeepCounts(local.length, keepLeading = 1, keepTrailing = 0)
+        val leading = if (local.first().isDigit()) 0 else clamped
         return local.take(leading) +
             policy.maskChar.toString().repeat(local.length - leading) +
             original.substring(at)

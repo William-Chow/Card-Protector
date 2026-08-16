@@ -71,11 +71,71 @@ class OverlapTest {
     }
 
     @Test
-    fun `a claimed span is never partially re-claimed`() {
-        val text = "IC 901231-14-5678 and card 4111111111111111"
+    fun `a claimed span is never partially re-claimed, and the rest is not dropped`() {
+        // This test used to read "IC 901231-14-5678 and card 4111111111111111",
+        // and it passed against an engine that leaked. The words "and card" break
+        // the card run in two, so that phrasing exercises the one arrangement in
+        // which the collision cannot happen — it asserted the absence of the bug
+        // by avoiding it. One space between the two values is the case that
+        // matters, because that is a single card run under the shipped pattern.
+        val text = "Ali 901231-14-5678 4111111111111111"
         assertEquals(
             mapOf(SensitiveType.MY_NRIC to 1, SensitiveType.CARD to 1),
             counts(text)
+        )
+        assertEquals(
+            "Ali ******-**-**** ************1111",
+            Redactor.redactAllInText(text, MaskPolicy('*')).output
+        )
+    }
+
+    @Test
+    fun `a card one dash away from an IC is still a card`() {
+        val text = "901231-14-5678-4111111111111111"
+        assertEquals(
+            mapOf(SensitiveType.MY_NRIC to 1, SensitiveType.CARD to 1),
+            counts(text)
+        )
+        assertEquals(
+            "******-**-****-************1111",
+            Redactor.redactAllInText(text, MaskPolicy('*')).output
+        )
+    }
+
+    @Test
+    fun `a phone or an IBAN beside a card does not swallow it either`() {
+        assertEquals(
+            mapOf(SensitiveType.PHONE to 1, SensitiveType.CARD to 1),
+            counts("012-3456789 4111111111111111")
+        )
+        assertEquals(
+            mapOf(SensitiveType.IBAN to 1, SensitiveType.CARD to 1),
+            counts("GB29NWBK60161331926819 4111111111111111")
+        )
+        // …and in the other order, where the card is claimed first and the
+        // higher-priority value is the one left over.
+        assertEquals(
+            mapOf(SensitiveType.MY_NRIC to 1, SensitiveType.CARD to 1),
+            counts("4111111111111111 901231-14-5678")
+        )
+    }
+
+    @Test
+    fun `a span another type keeps verbatim still obeys the card floor`() {
+        // A URL keeps its authority and an email keeps its domain, so a card-length
+        // digit run parked there would come back readable while the shipped masker
+        // hides it. The floor in Redactor covers every type at once.
+        assertEquals(
+            "https://****************.example.com/****",
+            Redactor.redactAllInText("https://4111111111111111.example.com/x", MaskPolicy('*')).output
+        )
+        assertEquals(
+            "*@****************.com",
+            Redactor.redactAllInText("a@4111111111111111.com", MaskPolicy('*')).output
+        )
+        assertEquals(
+            "****************@x.com",
+            Redactor.redactAllInText("4111111111111111@x.com", MaskPolicy('*')).output
         )
     }
 }

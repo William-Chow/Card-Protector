@@ -81,3 +81,18 @@ Secret Santa draw is on Friday
 # Accepted false negative, pinned so it is visible: the all-single-digit-octet
 # rule that kills "1.2.3.4" also declines this real public resolver.
 8.8.8.8
+
+# Dotted quads that are NOT addresses. The two lines this file used to carry —
+# "v1.10.4.2" and "Section 3.4.1.2" — were each killed by a *different* guard
+# (the lookbehind, and the all-single-digit-octet rule), so between them they
+# made the class look covered when it was not: drop the "v", give any octet two
+# digits, and the address rule fired mid-sentence. These are the shapes that
+# actually gate it.
+Build 1.10.4.2 on Chrome/120.0.6099.234
+Section 12.4.5.6 of the agreement
+Version 2.10.4.2 shipped on 2026-01-02
+Clause 12.4.5.6 of the tenancy agreement
+Released build 20.30.40.50 to testers
+Rujuk Seksyen 12.4.5.6 perjanjian ini
+Patch 4.10.200.3 is mandatory
+Table 12.4.5.6 lists the fees

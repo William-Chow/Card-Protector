@@ -1,5 +1,6 @@
 package com.kotlin.card.filter
 
+import com.kotlin.card.filter.detect.CARD_REGEX
 import com.kotlin.card.filter.detect.CardDetector
 import com.kotlin.card.filter.detect.EmailDetector
 import com.kotlin.card.filter.detect.IbanDetector
@@ -78,10 +79,11 @@ data class RedactResult(val output: String, val counts: Map<SensitiveType, Int>)
  *    them ever sees partially masked output, which matters because `#`, `$` and
  *    `!` are all selectable mask glyphs and re-scanning masked text would let
  *    them form new matches.
- * 3. **Resolve and replace** — first claim wins; an overlapping match is dropped
- *    whole, never partially applied. The rebuild walks spans by start position,
- *    so a replacement may be longer or shorter than what it replaces without
- *    invalidating any later offset.
+ * 3. **Resolve and replace** — first claim wins; an overlapping match is never
+ *    partially applied, but neither is it simply thrown away: the unclaimed
+ *    remainder is re-offered to the same detector (see [SCRUBBED]). The rebuild
+ *    walks spans by start position, so a replacement may be longer or shorter
+ *    than what it replaces without invalidating any later offset.
  */
 object Redactor {
 
@@ -111,23 +113,64 @@ object Redactor {
 
     private class Claim(val range: IntRange, val type: SensitiveType, val replacement: String)
 
+    /**
+     * What a claimed span looks like to a detector that re-scans after it.
+     *
+     * A newline, because it is the one character every pattern here already
+     * treats as a hard boundary: it is not a digit, not alphanumeric, not a `.`,
+     * not one of the single space / dash separators the card pattern spans, and
+     * it terminates the greedy `[^\s…]+` of the URL rule and the `\S+` of the
+     * secret rules. Scrubbing to it is therefore the honest picture of what the
+     * text will look like once the claim is masked: a boundary, not a bridge.
+     *
+     * Substituting in place keeps the string 1:1 with [normalizeForScan]'s
+     * output, so a re-scan still yields indices that mean the same thing in the
+     * original text, and a lookbehind still sees real context on the side that
+     * was never claimed.
+     */
+    private const val SCRUBBED = '\n'
+
     /** Mask every sensitive value in [text], leaving the rest byte-for-byte alone. */
     fun redactAllInText(text: String, policy: MaskPolicy): RedactResult {
         if (text.isEmpty()) return RedactResult(text, emptyMap())
         val normalized = normalizeForScan(text)
         val claimed = BooleanArray(normalized.length)
+        var claimedCells = 0
         val claims = ArrayList<Claim>()
 
         for (detector in DETECTORS) {
-            for (candidate in detector.find(normalized)) {
-                if (candidate.range.isEmpty()) continue
-                val range = detector.expand(normalized, candidate.range) { claimed[it] }
-                if ((range.first..range.last).any { claimed[it] }) continue
-                val original = text.substring(range.first, range.last + 1)
-                val replacement =
-                    detector.redact(original, candidate.copy(range = range), policy) ?: continue
-                for (index in range) claimed[index] = true
-                claims += Claim(range, detector.type, replacement)
+            // The first pass always reads the pristine string, so every lookaround
+            // sees the context it was written against. Re-scans read a copy with
+            // the claims so far scrubbed out — see [SCRUBBED].
+            var scan = normalized
+            var scannedAtCells = -1
+            while (true) {
+                var residual = false
+                for (candidate in detector.find(scan)) {
+                    if (candidate.range.isEmpty()) continue
+                    val range = detector.expand(normalized, candidate.range) { claimed[it] }
+                    val free = (range.first..range.last).count { !claimed[it] }
+                    if (free < range.last - range.first + 1) {
+                        // Overlaps a claim, so it cannot be masked as one value —
+                        // but the part nobody has claimed is still in the clear,
+                        // and dropping the candidate whole is what left a full PAN
+                        // beside a masked IC. Note it, re-offer it below.
+                        if (free > 0) residual = true
+                        continue
+                    }
+                    val original = text.substring(range.first, range.last + 1)
+                    val replacement = detector.redact(original, candidate.copy(range = range), policy)
+                        ?.let { cardFloor(it, policy.maskChar) } ?: continue
+                    for (index in range) claimed[index] = true
+                    claimedCells += range.last - range.first + 1
+                    claims += Claim(range, detector.type, replacement)
+                }
+                // Re-scan only while there is something left over *and* the picture
+                // has actually changed since the copy just scanned. Every further
+                // round needs a new claim, so this terminates.
+                if (!residual || scannedAtCells == claimedCells) break
+                scan = scrubClaimed(normalized, claimed)
+                scannedAtCells = claimedCells
             }
         }
         if (claims.isEmpty()) return RedactResult(text, emptyMap())
@@ -160,6 +203,38 @@ object Redactor {
         keepLeading: Int,
         keepTrailing: Int
     ): RedactResult = redactAllInText(text, MaskPolicy(maskChar, keepLeading, keepTrailing))
+
+    /**
+     * The floor under every replacement: a detector that keeps part of its span
+     * verbatim may not keep a card-length digit run the shipped masker hides.
+     *
+     * Two real cases, both a full PAN in the clear on this branch before it was
+     * added, and both reachable from the PROCESS_TEXT sheet: a URL keeps its
+     * authority (`https://4111111111111111.example.com/x`) and an email keeps
+     * its domain (`a@4111111111111111.com`). Rather than patching those two
+     * detectors and waiting for the third, the rule lives here, where it covers
+     * every type that exists now or later.
+     *
+     * Safe to run on a replacement even though replacements are partly masked
+     * already: no glyph the picker offers is a digit, a space or a dash, so a
+     * mask glyph can only ever *break* a run, never join one. Length is
+     * preserved, and the run is masked outright rather than at the slider
+     * position, which keeps this independent of the Reveal control — the run is
+     * not the value this type is masking, so the card slider does not govern it.
+     */
+    private fun cardFloor(replacement: String, maskChar: Char): String {
+        if (replacement.count { it in '0'..'9' } < 12) return replacement
+        return CARD_REGEX.replace(replacement) { maskNumber(it.value, maskChar, 0, 0) }
+    }
+
+    /** [normalized] with every claimed index replaced by [SCRUBBED], length unchanged. */
+    private fun scrubClaimed(normalized: String, claimed: BooleanArray): String {
+        val out = CharArray(normalized.length)
+        for (index in normalized.indices) {
+            out[index] = if (claimed[index]) SCRUBBED else normalized[index]
+        }
+        return String(out)
+    }
 }
 
 /**

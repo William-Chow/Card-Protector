@@ -21,8 +21,13 @@ import com.kotlin.card.filter.maskNumber
  *   is a regression: on a 22-digit run this pattern masks the first 19 today,
  *   and an anchored version would match nothing at all. [CardDetector.expand]
  *   handles the overspill instead, and can only ever mask more.
+ *
+ * Visible to the rest of the module because [com.kotlin.card.filter.Redactor]
+ * enforces it as a *floor* on every other detector's output too: a span that
+ * some other type keeps verbatim may still not hand back a card run the shipped
+ * masker would have hidden. One copy of the pattern, one place to drift from.
  */
-private val CARD_REGEX = Regex("""\d(?:[ \-]?\d){11,18}""")
+internal val CARD_REGEX = Regex("""\d(?:[ \-]?\d){11,18}""")
 
 /**
  * The catch-all numeric run, and the only type the Reveal slider governs.

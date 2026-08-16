@@ -82,6 +82,58 @@ fun ipv4Public(value: String): Boolean {
 }
 
 /**
+ * Words that introduce a *numbered thing* — a version, a build, a clause — in
+ * English or Malay. A dotted quad behind one of these is an enumeration, not an
+ * address, whatever its octets happen to be.
+ *
+ * Nothing here plausibly introduces a real address in the text this app sees;
+ * the words that do (`ip`, `host`, `server`, `gateway`, `dns`) are deliberately
+ * absent, and adding one would start dropping real addresses.
+ */
+private val ENUMERATOR_WORDS: Set<String> = setOf(
+    "v", "ver", "version", "versions", "versi",
+    "build", "builds", "rev", "revision", "release", "releases", "patch", "update",
+    "section", "sec", "seksyen", "bahagian", "chapter", "bab",
+    "clause", "fasal", "article", "perkara", "part", "paragraph", "para",
+    "item", "step", "langkah", "figure", "fig", "rajah", "table", "jadual",
+    "appendix", "lampiran", "schedule", "exhibit", "rule", "no", "nos", "level", "phase"
+)
+
+/**
+ * Whether the dotted quad at [start] in [text] is introduced by an enumerator
+ * word, and so is a version or section number rather than an address.
+ *
+ * This is the third IPv4 guard, and it exists because the other two only *look*
+ * like they cover version strings. The lookbehind kills `v1.10.4.2` and
+ * [ipv4Public]'s all-single-digit rule kills `Section 3.4.1.2`, so the corpus —
+ * which held exactly those two shapes — reported the class as handled. It is
+ * not: `Build 1.10.4.2` and `Section 12.4.5.6` clear both guards and were being
+ * masked, mid-sentence, in ordinary prose.
+ *
+ * Only the immediately preceding word counts, optionally through a `:`, `#` or
+ * `-`. A full stop is deliberately *not* crossed, so a sentence that happens to
+ * end in "…section." does not swallow the address that starts the next one.
+ */
+fun ipv4Enumerated(text: String, start: Int): Boolean {
+    var index = start - 1
+    var separated = false
+    while (index >= 0 && (text[index] == ' ' || text[index] == '\t')) {
+        index--
+        separated = true
+    }
+    if (index >= 0 && (text[index] == ':' || text[index] == '#' || text[index] == '-')) {
+        index--
+        separated = true
+        while (index >= 0 && (text[index] == ' ' || text[index] == '\t')) index--
+    }
+    if (!separated) return false
+    val wordEnd = index
+    while (index >= 0 && text[index].isLetter()) index--
+    if (index == wordEnd) return false
+    return text.substring(index + 1, wordEnd + 1).lowercase() in ENUMERATOR_WORDS
+}
+
+/**
  * Whether a Malaysian number's national significant digits (the leading `+60`
  * or trunk `0` already removed) belong to a person rather than a billboard.
  *
