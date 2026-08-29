@@ -27,14 +27,26 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Receive shared text (e.g. a card number) from other apps -->
+            <!-- Receive shared text (e.g. a card number) from other apps.
+                 SEND stays here: a share is a deliberate "open the app with this
+                 text" gesture and should land on the full screen. PROCESS_TEXT
+                 is an inline "fix this selection" gesture and goes to the sheet. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
-            <!-- "Card Pro" entry in the text-selection toolbar -->
-            <intent-filter>
+        </activity>
+
+        <!-- The text-selection toolbar entry: select text in any app, tap
+             "Redact", get it back masked in place. launchMode is deliberately
+             left at the default: singleTask/singleInstance make the caller's
+             startActivityForResult return RESULT_CANCELED immediately, which
+             would silently break replacement. -->
+        <activity android:name="com.kotlin.card.ui.RedactActivity"
+            android:exported="true"
+            android:theme="@style/Theme.CreditCardFiltering.Sheet">
+            <intent-filter android:label="@string/action_redact">
                 <action android:name="android.intent.action.PROCESS_TEXT" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />

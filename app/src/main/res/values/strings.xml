@@ -3,6 +3,10 @@
     <string name="masked">Masked by</string>
     <string name="number_ignored">Number Ignored to masked</string>
     <string name="card_number">Card Number</string>
+    <!-- Label on the text-selection toolbar entry. Declared here only:
+         values-night/strings.xml overrides just the keys it declares, so a key
+         present only in values/ resolves correctly in both day and night. -->
+    <string name="action_redact">Redact</string>
     <string name="dash">-</string>
     <string name="submit">Submit</string>
     <string name="e_g_1_2_3_4_5_6_7_8_9_0_10">E.g. 1,2,3,4,5,6,7,8,9,0,10…</string>

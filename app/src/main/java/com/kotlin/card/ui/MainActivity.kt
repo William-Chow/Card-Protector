@@ -55,6 +55,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -90,14 +92,19 @@ import com.google.android.gms.ads.interstitial.InterstitialAd
 import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 import com.kotlin.card.BuildConfig
 import com.kotlin.card.R
+import com.kotlin.card.data.MASK_SYMBOLS
+import com.kotlin.card.data.RedactPrefs
 import com.kotlin.card.filter.CardTools
 import com.kotlin.card.filter.MAX_REVEALED_DIGITS
 import com.kotlin.card.filter.MaskMode
-import com.kotlin.card.filter.countCards
+import com.kotlin.card.filter.MaskPolicy
+import com.kotlin.card.filter.RedactResult
+import com.kotlin.card.filter.Redactor
+import com.kotlin.card.filter.SensitiveType
 import com.kotlin.card.filter.extractFirstCardDigits
 import com.kotlin.card.filter.keepCounts
-import com.kotlin.card.filter.maskAllInText
 import com.kotlin.card.filter.maskNumber
+import com.kotlin.card.filter.summarizeCounts
 import com.kotlin.card.ui.theme.CardGradBottom
 import com.kotlin.card.ui.theme.CardGradMid
 import com.kotlin.card.ui.theme.CardGradTop
@@ -109,13 +116,54 @@ import com.kotlin.card.ui.theme.TextPrimary
 import com.kotlin.card.ui.theme.ThemeMode
 import com.kotlin.card.ui.theme.successAccent
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private enum class ScreenMode { Single, Batch }
+
+/**
+ * The largest paste the batch field accepts. One rule bounds two things: the
+ * saved-state Binder transaction that carries this text across a recreation, and
+ * the per-keystroke scan cost of the redactor.
+ */
+private const val MAX_BATCH_CHARS = 64 * 1024
+
+/**
+ * Up to this length the batch preview is computed inline, so typing feels
+ * exactly as it did before the multi-type engine landed. Longer input debounces
+ * onto a background thread instead.
+ */
+private const val SYNC_SCAN_LIMIT = 2_000
+
+/** How long a long paste sits still before it is scanned. */
+private const val SCAN_DEBOUNCE_MS = 120L
+
+/** The "nothing scanned yet" result, so the async path has something to show. */
+private val EMPTY_RESULT = RedactResult("", emptyMap())
+
+// Enums go into saved state as ordinals rather than through the autoSaver's
+// Serializable path, which would put a whole class name in the Bundle.
+private val ScreenModeSaver =
+    Saver<ScreenMode, Int>(save = { it.ordinal }, restore = { ScreenMode.entries[it] })
+private val MaskModeSaver =
+    Saver<MaskMode, Int>(save = { it.ordinal }, restore = { MaskMode.entries[it] })
+private val ThemeModeSaver =
+    Saver<ThemeMode, Int>(save = { it.ordinal }, restore = { ThemeMode.entries[it] })
 
 class MainActivity : ComponentActivity() {
 
     private var mInterstitialAd: InterstitialAd? = null
+
+    /**
+     * The share / selection payload, held as state rather than read inline so a
+     * second share landing on a live instance (see [onNewIntent]) re-seeds the
+     * screen. [shareToken] is bumped on every delivery, which is what lets the
+     * composable tell a fresh share apart from one it has already consumed.
+     */
+    private var sharedText by mutableStateOf<String?>(null)
+    private var shareToken by mutableStateOf(0)
 
     private lateinit var inAppUpdate: InAppUpdate
     private val appUpdateResultLauncher = registerForActivityResult(
@@ -126,9 +174,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val sharedText = parseSharedText(intent)
+        consumeSharedText(intent)
+        val prefs = RedactPrefs(this)
         setContent {
-            var themeMode by remember { mutableStateOf(ThemeMode.System) }
+            var themeMode by rememberSaveable(stateSaver = ThemeModeSaver) {
+                mutableStateOf(prefs.themeMode)
+            }
             val darkTheme = when (themeMode) {
                 ThemeMode.System -> isSystemInDarkTheme()
                 ThemeMode.Dark -> true
@@ -137,9 +188,14 @@ class MainActivity : ComponentActivity() {
             CardProTheme(darkTheme = darkTheme) {
                 MainScreen(
                     sharedText = sharedText,
+                    shareToken = shareToken,
+                    prefs = prefs,
                     onCommit = { showInterstitial() },
                     themeMode = themeMode,
-                    onThemeChange = { themeMode = it }
+                    onThemeChange = {
+                        themeMode = it
+                        prefs.themeMode = it
+                    }
                 )
             }
         }
@@ -150,6 +206,27 @@ class MainActivity : ComponentActivity() {
             updateLauncher = appUpdateResultLauncher,
             onUpdateFlowFailed = { }
         )
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeSharedText(intent)
+    }
+
+    /**
+     * Lift the payload out of [source] and hand it to the UI exactly once.
+     *
+     * The Activity's own `intent` is then replaced with an empty one: it holds
+     * an unmasked card number otherwise, and a recreated instance re-reads that
+     * same field. Nothing leaves the device either way — this only shortens how
+     * long the plaintext sits in a field we control.
+     */
+    private fun consumeSharedText(source: Intent) {
+        val text = parseSharedText(source) ?: return
+        sharedText = text
+        shareToken++
+        intent = Intent()
     }
 
     /** Text handed to us by a SEND share or the PROCESS_TEXT selection action. */
@@ -217,6 +294,8 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun MainScreen(
         sharedText: String?,
+        shareToken: Int,
+        prefs: RedactPrefs,
         onCommit: () -> Unit,
         themeMode: ThemeMode,
         onThemeChange: (ThemeMode) -> Unit
@@ -228,37 +307,82 @@ class MainActivity : ComponentActivity() {
         val scope = rememberCoroutineScope()
         val colors = MaterialTheme.colorScheme
 
-        val sharedCount = remember(sharedText) { sharedText?.let { countCards(it) } ?: 0 }
-
-        var screenMode by remember {
-            mutableStateOf(if (sharedCount > 1) ScreenMode.Batch else ScreenMode.Single)
+        // Everything the user typed or chose goes through rememberSaveable, so a
+        // theme flip or a rotation — both of which destroy and recreate the
+        // Activity — no longer wipes the screen. `remember` survives
+        // recomposition only; saved state is what survives recreation.
+        //
+        // Privacy note: this puts the card number into the saved-instance-state
+        // Bundle, which crosses a Binder into system_server. It is not written to
+        // disk (persistableMode defaults to persistRootOnly, which persists only
+        // the launch Intent) and is not covered by allowBackup. It never leaves
+        // the device, so the "On-device" badge still holds.
+        var screenMode by rememberSaveable(stateSaver = ScreenModeSaver) {
+            mutableStateOf(ScreenMode.Single)
         }
-        var cardNumber by remember {
-            mutableStateOf(sharedText?.let { extractFirstCardDigits(it) } ?: "")
-        }
-        var batchText by remember {
-            mutableStateOf(if (sharedCount > 1) sharedText.orEmpty() else "")
-        }
-        var maskMode by remember { mutableStateOf(MaskMode.LAST) }
-        var keepN by remember { mutableStateOf(4) }
-        var maskSymbol by remember { mutableStateOf('*') }
+        var cardNumber by rememberSaveable { mutableStateOf("") }
+        var batchText by rememberSaveable { mutableStateOf("") }
+        var maskMode by rememberSaveable(stateSaver = MaskModeSaver) { mutableStateOf(prefs.maskMode) }
+        var keepN by rememberSaveable { mutableStateOf(prefs.keepN) }
+        var maskSymbolIndex by rememberSaveable { mutableStateOf(prefs.maskSymbolIndex) }
+        // Deliberately NOT saveable: it only drives the hero's bounce animation,
+        // and restoring it would replay the bounce on every theme flip.
         var commitPulse by remember { mutableStateOf(0) }
+        var consumedShareToken by rememberSaveable { mutableStateOf(0) }
 
-        val symbols = listOf('*', '•', '#', 'x', '$', '!', '@', '%', '^', '&')
+        val symbols = MASK_SYMBOLS
+        val maskSymbol = symbols[maskSymbolIndex.coerceIn(symbols.indices)]
         val (keepLeading, keepTrailing) = keepCounts(maskMode, keepN.coerceIn(0, MAX_REVEALED_DIGITS))
+        val policy = MaskPolicy(maskSymbol, keepLeading, keepTrailing)
+
+        // Seed from a share exactly once per delivery. This runs as an effect
+        // rather than in the state initializers above on purpose: initializers
+        // are skipped on restore, so seeding there worked, but a share that had
+        // been edited and then survived a recreation would quietly get the
+        // original shared value written back over the edit. Gating on a token
+        // that itself lives in saved state removes that path entirely.
+        LaunchedEffect(shareToken) {
+            val text = sharedText
+            if (text == null || shareToken == consumedShareToken) return@LaunchedEffect
+            consumedShareToken = shareToken
+            // Single-card mode only when the selection is exactly one card and
+            // nothing else. The old test was "not more than one card", which
+            // sent a shared email or phone number into Single mode and dropped
+            // the user on an empty card field.
+            val counts = Redactor.redactAllInText(text, policy).counts
+            if (counts == mapOf(SensitiveType.CARD to 1)) {
+                screenMode = ScreenMode.Single
+                cardNumber = extractFirstCardDigits(text)
+            } else {
+                screenMode = ScreenMode.Batch
+                batchText = text
+            }
+        }
 
         val singleMasked = remember(cardNumber, maskSymbol, keepLeading, keepTrailing) {
             maskNumber(cardNumber, maskSymbol, keepLeading, keepTrailing)
         }
-        val batchMasked = remember(batchText, maskSymbol, keepLeading, keepTrailing) {
-            maskAllInText(batchText, maskSymbol, keepLeading, keepTrailing)
+        // Short input redacts synchronously so typing feels exactly as it did.
+        // Long input debounces onto a background thread instead — the 64 KB cap
+        // on the field below is what bounds the worst case.
+        val syncBatch = remember(batchText, policy) {
+            if (batchText.length <= SYNC_SCAN_LIMIT) Redactor.redactAllInText(batchText, policy) else null
         }
-        val batchCount = remember(batchText) { countCards(batchText) }
+        var asyncBatch by remember { mutableStateOf(EMPTY_RESULT) }
+        LaunchedEffect(batchText, policy) {
+            if (syncBatch != null) return@LaunchedEffect
+            delay(SCAN_DEBOUNCE_MS)
+            asyncBatch = withContext(Dispatchers.Default) { Redactor.redactAllInText(batchText, policy) }
+        }
+        val batchResult = syncBatch ?: asyncBatch
+        val batchMasked = batchResult.output
+        val batchSummary = summarizeCounts(batchResult.counts)
+        val batchFound = batchResult.counts.isNotEmpty()
 
         val hasInput = cardNumber.isNotEmpty()
         val brand = CardTools.detectBrand(cardNumber)
         val luhnOk = hasInput && CardTools.isLuhnValid(cardNumber)
-        val canCommit = if (screenMode == ScreenMode.Single) hasInput else batchCount > 0
+        val canCommit = if (screenMode == ScreenMode.Single) hasInput else batchFound
 
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -429,18 +553,31 @@ class MainActivity : ComponentActivity() {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 OutlinedTextField(
                                     value = batchText,
-                                    onValueChange = { batchText = it },
+                                    onValueChange = { value ->
+                                        // The cap bounds both the saved-state
+                                        // Binder transaction and the per-keystroke
+                                        // scan cost, in one rule.
+                                        if (value.length <= MAX_BATCH_CHARS) {
+                                            batchText = value
+                                        } else {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    "That is over the ${MAX_BATCH_CHARS / 1024} KB limit — paste a smaller piece"
+                                                )
+                                            }
+                                        }
+                                    },
                                     modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("Paste text with card numbers") },
+                                    label = { Text("Paste text to redact") },
                                     minLines = 4,
                                     maxLines = 8,
                                     textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace)
                                 )
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    text = "$batchCount card number(s) detected",
+                                    text = if (batchFound) "$batchSummary found" else "Nothing sensitive detected",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = if (batchCount > 0) colors.successAccent else colors.onSurfaceVariant
+                                    color = if (batchFound) colors.successAccent else colors.onSurfaceVariant
                                 )
                                 Spacer(Modifier.height(16.dp))
                                 Text(
@@ -468,7 +605,7 @@ class MainActivity : ComponentActivity() {
                                 Spacer(Modifier.height(12.dp))
                                 Button(
                                     modifier = Modifier.fillMaxWidth(),
-                                    enabled = batchCount > 0,
+                                    enabled = batchFound,
                                     onClick = {
                                         clipboard.setText(AnnotatedString(batchMasked))
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -484,9 +621,20 @@ class MainActivity : ComponentActivity() {
                     // ── Shared masking settings ──────────────────────────────
                     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
+                            // Scoped on purpose. The slider only ever governs
+                            // card numbers; every other type carries a fixed
+                            // safe default in its own detector. Without this
+                            // label a user would reasonably assume dragging to
+                            // 10 reveals ten digits of their IC too — it does
+                            // not, and SliderScopeTest asserts that mechanically.
                             Text(
-                                text = "Reveal",
+                                text = "Reveal — card numbers only",
                                 style = MaterialTheme.typography.labelLarge,
+                                color = colors.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Other types use fixed safe defaults.",
+                                style = MaterialTheme.typography.bodySmall,
                                 color = colors.onSurfaceVariant
                             )
                             Spacer(Modifier.height(6.dp))
@@ -501,6 +649,7 @@ class MainActivity : ComponentActivity() {
                                         selected = maskMode == mode,
                                         onClick = {
                                             maskMode = mode
+                                            prefs.maskMode = mode
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         },
                                         shape = SegmentedButtonDefaults.itemShape(index, modes.size)
@@ -513,6 +662,7 @@ class MainActivity : ComponentActivity() {
                                 Slider(
                                     value = keepN.toFloat(),
                                     onValueChange = { keepN = it.roundToInt() },
+                                    onValueChangeFinished = { prefs.keepN = keepN },
                                     valueRange = 0f..MAX_REVEALED_DIGITS.toFloat(),
                                     steps = MAX_REVEALED_DIGITS - 1
                                 )
@@ -541,11 +691,12 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                symbols.forEach { symbol ->
+                                symbols.forEachIndexed { index, symbol ->
                                     FilterChip(
-                                        selected = maskSymbol == symbol,
+                                        selected = maskSymbolIndex == index,
                                         onClick = {
-                                            maskSymbol = symbol
+                                            maskSymbolIndex = index
+                                            prefs.maskSymbolIndex = index
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         },
                                         label = { Text(symbol.toString()) }
