@@ -22,6 +22,15 @@ package com.kotlin.card.filter
  * than inside it. Ordering decides who wins a contested span; what happens to
  * the part of a span nobody won is the resolver's problem, and the answer has to
  * be "re-offer it", not "drop it". See `Redactor.redactAllInText`.
+ *
+ * [CARD_EXPIRY] and [CVV] sit immediately above CARD for a different reason than
+ * the containment rule above: they cannot collide with it at all — CARD floors
+ * at twelve digits and neither of these ever reaches four — so the placement is
+ * about *naming*, not about who wins. On `4111111111111111-12-26` the whole
+ * thing is one twenty-digit run; letting CARD expand across it would mask every
+ * digit correctly and then report "1 card", which tells the user less than the
+ * truth. Claiming the expiry first splits the run at the right seam and the
+ * summary line says what was actually on the page.
  */
 enum class SensitiveType(
     val priority: Int,
@@ -36,6 +45,8 @@ enum class SensitiveType(
     IBAN(4, "IBAN", "IBANs"),
     MY_NRIC(5, "IC", "ICs"),
     PHONE(6, "phone", "phones"),
-    CARD(7, "card", "cards"),
-    IPV4(8, "IP", "IPs")
+    CARD_EXPIRY(7, "expiry date", "expiry dates"),
+    CVV(8, "CVV", "CVVs"),
+    CARD(9, "card", "cards"),
+    IPV4(10, "IP", "IPs")
 }

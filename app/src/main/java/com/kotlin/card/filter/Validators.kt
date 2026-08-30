@@ -184,3 +184,113 @@ fun ipv4Enumerated(text: String, start: Int, quad: String): Boolean {
  */
 fun phoneDigitsPlausible(national: String): Boolean =
     !national.startsWith("1300") && !national.startsWith("1800")
+
+/**
+ * Words that introduce a card's expiry date, in English and Malay.
+ *
+ * Multi-word entries are matched as literal phrases against the text preceding
+ * the candidate, so `valid thru` costs nothing extra and `valid` on its own —
+ * which introduces plenty of things that are not dates — is not in the table.
+ */
+private val EXPIRY_LABELS: List<String> = listOf(
+    "exp", "exp date", "expiry", "expiry date", "expires", "expires on",
+    "expiration", "expiration date", "valid thru", "valid through",
+    "valid to", "valid until", "good thru", "good through",
+    "luput", "tarikh luput", "sah hingga", "tamat tempoh"
+)
+
+/** Enough characters to hold the longest phrase in [EXPIRY_LABELS] plus its boundary. */
+private const val LABEL_WINDOW = 24
+
+/**
+ * Whether the `MM/YY` at [start] in [text] is introduced by an expiry label.
+ *
+ * This is one of the two anchors an expiry needs, and the reason it needs one at
+ * all is that `MM/YY` is the single weakest shape in this app. `12/26` is also a
+ * fraction, a score, a date range and half of a `DD/MM/YY` date, and unlike a
+ * card number it carries no checksum, no length and no structure to lean on. The
+ * pattern's own lookarounds already refuse the *inside* of a longer date —
+ * `16/08/2026` cannot produce a match at either seam — but nothing structural
+ * separates a bare `12/26` in prose from a real expiry, so the evidence has to
+ * come from the text around it.
+ *
+ * Only the immediately preceding phrase counts, optionally through a single
+ * `:`, `=`, `#` or `-`, and the label must end on a non-alphanumeric boundary so
+ * `unexp` cannot pass for `exp`.
+ */
+fun expiryLabelled(text: String, start: Int): Boolean {
+    var index = start - 1
+    while (index >= 0 && (text[index] == ' ' || text[index] == '\t')) index--
+    if (index >= 0 && (text[index] == ':' || text[index] == '=' || text[index] == '#' || text[index] == '-')) {
+        index--
+        while (index >= 0 && (text[index] == ' ' || text[index] == '\t')) index--
+    }
+    if (index < 0) return false
+    val end = index + 1
+    val before = text.substring(maxOf(0, end - LABEL_WINDOW), end).lowercase()
+    return EXPIRY_LABELS.any { label ->
+        before.endsWith(label) &&
+            (before.length == label.length || !before[before.length - label.length - 1].isLetterOrDigit())
+    }
+}
+
+/**
+ * Line numbers for arbitrary positions in a string: one linear pass up front,
+ * then O(log n) per query.
+ *
+ * The obvious alternative — walk backwards from each candidate to the previous
+ * newline — is quadratic on input this app is genuinely exposed to. 64 KB of
+ * `12/26 ` on a single line is ten thousand candidates each scanning 64 KB, and
+ * the scan would run inside a PROCESS_TEXT handler on the *host* app's UI
+ * thread. `PerfTest` exists because that is a hang somebody else's users see.
+ */
+class LineIndex(text: String) {
+
+    private val newlines: IntArray = run {
+        var count = 0
+        for (ch in text) if (ch == '\n') count++
+        val positions = IntArray(count)
+        var next = 0
+        for (index in text.indices) if (text[index] == '\n') positions[next++] = index
+        positions
+    }
+
+    /** Zero-based line number of [position]. */
+    fun lineOf(position: Int): Int {
+        val found = newlines.binarySearch(position)
+        return if (found >= 0) found else -(found + 1)
+    }
+}
+
+/**
+ * The lines that hold a whole card-length digit run — the second anchor for an
+ * expiry date, precomputed once so the check itself is a set lookup.
+ *
+ * The case it exists for is the one that actually arrives: a card block pasted
+ * out of an email or read off a photo, where the expiry sits beside a PAN with
+ * no label in sight. A run is the same ruler [cardLengthRuns] uses everywhere
+ * else in this engine, so "there is a card here" means exactly what it means to
+ * the ceiling and the sweep.
+ *
+ * **Scoped to a single line deliberately.** A window measured in characters
+ * would reach across a document and turn every `MM/YY` in it into an expiry the
+ * moment one card appeared anywhere; a line is a unit the user can see. The cost
+ * is a real and named false negative: an unlabelled expiry on its own line below
+ * a PAN is not claimed. Card blocks written that way essentially always label
+ * the field — that is what [expiryLabelled] is for — and the alternative is a
+ * rule whose blast radius grows with the size of the paste.
+ *
+ * A run that *contains* the candidate counts. `12/26 4111111111111111` puts the
+ * expiry immediately in front of a sixteen-digit run on the same line, and the
+ * caller pairs this with a `/`-only rule so a dash-separated range next to an
+ * account number is not swept up with it.
+ */
+fun cardRunLines(lines: LineIndex, runs: List<DigitRun>): Set<Int> {
+    if (runs.isEmpty()) return emptySet()
+    val onOneLine = HashSet<Int>()
+    for (run in runs) {
+        val first = lines.lineOf(run.range.first)
+        if (first == lines.lineOf(run.range.last)) onOneLine += first
+    }
+    return onOneLine
+}

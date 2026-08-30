@@ -96,3 +96,22 @@ Released build 20.30.40.50 to testers
 Rujuk Seksyen 12.4.5.6 perjanjian ini
 Patch 4.10.200.3 is mandatory
 Table 12.4.5.6 lists the fees
+
+# Card-field decoys. MM/YY is the weakest shape in the app — no checksum, no
+# length, no structure — so the expiry rule is anchored on either a label or a
+# card-length run sharing the line, and the CVV rule on a label alone. These are
+# the lines that gate both anchors.
+Passed 12/26 of the checks
+Score 11/12 in the final round
+Ratio 1/2 and 3/4 of the total
+Chapter 12/26 of the handbook
+Sesi 09/2026 bermula minggu depan
+Ref 100234-12-26 approved
+The CVV field was left blank
+Security policy requires 3 approvals
+# A card-length run and a full date on one line: the date is structurally unable
+# to produce a match, because both of its seams are pinned by a slash.
+Invoice 123456789012 dated 16/08/2026
+# A card-length run and a dash-separated range on one line. The near-card anchor
+# takes only the slash form, so this stays a range.
+Order 123456789012 items 12-26

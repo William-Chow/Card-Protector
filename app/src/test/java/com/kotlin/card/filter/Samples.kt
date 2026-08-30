@@ -8,6 +8,8 @@ val TYPE_SAMPLES: Map<SensitiveType, String> = mapOf(
     SensitiveType.IBAN to "MT84MALT011000012345MTLCAST001S",
     SensitiveType.MY_NRIC to "901231-14-5678",
     SensitiveType.PHONE to "+60 12-345 6789",
+    SensitiveType.CARD_EXPIRY to "Exp 12/26",
+    SensitiveType.CVV to "CVV: 123",
     SensitiveType.CARD to "4111111111111111",
     SensitiveType.IPV4 to "203.0.113.45"
 )
@@ -40,7 +42,11 @@ val MULTI_VALUE_SAMPLES: List<String> = listOf(
     "203.0.113.45 4111111111111111",
     "4111111111111111 4222222222222",
     "https://x.io/p?id=4111111111111111 012-3456789",
-    "TAC: 483920 4111111111111111"
+    "TAC: 483920 4111111111111111",
+    // The shape the app is named after and could not read until now: a card
+    // block with all three fields on it, in the two layouts one arrives in.
+    "4111 1111 1111 1111 Exp 12/26 CVV 123",
+    "Kad 4111111111111111\nLuput: 09/2027\nCVV 4321"
 )
 
 /** A wider spread of real sensitive values, used where one per type is too thin. */

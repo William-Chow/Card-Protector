@@ -2,6 +2,8 @@ package com.kotlin.card.filter
 
 import com.kotlin.card.filter.detect.CARD_REGEX
 import com.kotlin.card.filter.detect.CardDetector
+import com.kotlin.card.filter.detect.CardExpiryDetector
+import com.kotlin.card.filter.detect.CvvDetector
 import com.kotlin.card.filter.detect.EmailDetector
 import com.kotlin.card.filter.detect.IbanDetector
 import com.kotlin.card.filter.detect.Ipv4Detector
@@ -119,6 +121,8 @@ object Redactor {
         IbanDetector,
         MyNricDetector,
         PhoneDetector,
+        CardExpiryDetector,
+        CvvDetector,
         CardDetector,
         Ipv4Detector
     ).also { detectors ->
