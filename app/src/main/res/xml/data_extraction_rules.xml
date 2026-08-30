@@ -1,19 +1,25 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Auto Backup and device-to-device transfer on API 31+. The API 28–30 half of
+    the same rule lives in xml/backup_rules.xml; they must not drift.
+
+    Both sections are allowlists: naming one <include> excludes everything not
+    named, which is the point. The app's own preferences file carries a theme, a
+    mask glyph and two reveal counts — nothing sensitive, and nothing that would
+    embarrass a user restored onto a new phone. Nothing else the app writes
+    leaves the device, so a card number cannot reach a cloud backup by way of a
+    file somebody adds later.
+
+    <device-transfer> gets the same allowlist rather than being left open. A
+    direct phone-to-phone copy is a friendlier channel than Google's servers, but
+    it is still a copy off this device, and there is nothing here worth widening
+    the rule for.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+        <include domain="sharedpref" path="cardpro.xml" />
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <include domain="sharedpref" path="cardpro.xml" />
     </device-transfer>
-    -->
 </data-extraction-rules>

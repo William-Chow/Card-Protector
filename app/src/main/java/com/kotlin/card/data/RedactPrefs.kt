@@ -11,18 +11,21 @@ import com.kotlin.card.ui.theme.ThemeMode
 /** The mask glyphs the picker offers, in the order it shows them. */
 val MASK_SYMBOLS = listOf('*', '•', '#', 'x', '$', '!', '@', '%', '^', '&')
 
-
 /**
  * Four presentation toggles — theme, mask glyph, reveal mode, reveal count —
  * so the redaction sheet honours the choices made on the main screen, and so
  * the theme stops resetting on every cold start.
  *
  * **No input or output text is ever written here, and none ever should be.**
- * The app declares `android:allowBackup="true"` against an entirely commented-out
- * `xml/backup_rules.xml`, which means everything in this file is copied to the
- * user's cloud backup. A glyph preference is not sensitive. A card number is,
- * and putting one here would quietly break the "On-device" badge the app shows
- * in its own header.
+ * This file is the one thing `xml/backup_rules.xml` and
+ * `xml/data_extraction_rules.xml` allow off the device, by name — a glyph
+ * preference is not sensitive, a card number is, and putting one here would
+ * quietly break the "On-device" badge the app shows in its own header.
+ *
+ * Those two files used to be the commented-out scaffolding template, which under
+ * `android:allowBackup="true"` meant everything the app wrote went to the user's
+ * cloud backup and this paragraph was the only thing standing in the way. They
+ * are allowlists now, so the rule is enforced rather than described.
  *
  * Plain [SharedPreferences] on purpose: `androidx.preference` and DataStore
  * would each be a new dependency for four integers.

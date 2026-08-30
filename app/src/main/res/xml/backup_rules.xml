@@ -1,13 +1,21 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older that API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Auto Backup on API 28–30. API 31+ uses xml/data_extraction_rules.xml, and
+    minSdk is 28, so both files are live and both have to say the same thing.
+
+    This shipped as the scaffolding template: every rule commented out, which
+    under android:allowBackup="true" means *everything* the app writes is copied
+    to the user's cloud backup. That was survivable only by accident — the app
+    stores four presentation integers and nothing else — and RedactPrefs carries
+    a comment saying as much, which is a note asking to be read rather than a
+    control.
+
+    Declaring a single <include> turns the rule from a denylist into an
+    allowlist: shared_prefs/cardpro.xml is copied and nothing else is, now or
+    after somebody adds a file here without thinking about backup. A card number
+    written anywhere in this app's data directory stays on the device, which is
+    what the "On-device" badge in the header promises.
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <include domain="sharedpref" path="cardpro.xml" />
 </full-backup-content>
