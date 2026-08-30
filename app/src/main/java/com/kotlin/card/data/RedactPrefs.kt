@@ -12,6 +12,23 @@ import com.kotlin.card.ui.theme.ThemeMode
 val MASK_SYMBOLS = listOf('*', '•', '#', 'x', '$', '!', '@', '%', '^', '&')
 
 /**
+ * Spoken names for [MASK_SYMBOLS], in the same order.
+ *
+ * A chip whose entire label is `•` or `^` is a chip a screen reader announces as
+ * "bullet" or nothing at all, with no hint that it is a choice of mask
+ * character. The list is asserted to line up with the glyphs rather than trusted
+ * to, because the failure mode of a missing entry is an index crash in the UI.
+ */
+val MASK_SYMBOL_NAMES: List<String> = listOf(
+    "asterisk", "bullet", "hash", "letter x", "dollar sign",
+    "exclamation mark", "at sign", "percent sign", "caret", "ampersand"
+).also { names ->
+    require(names.size == MASK_SYMBOLS.size) {
+        "MASK_SYMBOL_NAMES must name every glyph in MASK_SYMBOLS"
+    }
+}
+
+/**
  * Four presentation toggles — theme, mask glyph, reveal mode, reveal count —
  * so the redaction sheet honours the choices made on the main screen, and so
  * the theme stops resetting on every cold start.

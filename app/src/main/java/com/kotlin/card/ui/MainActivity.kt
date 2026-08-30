@@ -68,6 +68,11 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -93,6 +98,7 @@ import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 import com.kotlin.card.BuildConfig
 import com.kotlin.card.R
 import com.kotlin.card.data.MASK_SYMBOLS
+import com.kotlin.card.data.MASK_SYMBOL_NAMES
 import com.kotlin.card.data.RedactPrefs
 import com.kotlin.card.filter.CardTools
 import com.kotlin.card.filter.MAX_REVEALED_DIGITS
@@ -603,15 +609,53 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                                 Spacer(Modifier.height(12.dp))
-                                Button(
+                                // Batch mode had Copy and nothing else, while
+                                // Single mode had Copy, Share, Image and Clear.
+                                // Share is the action that finishes the job —
+                                // the whole point is handing the masked text to
+                                // somebody — and it was the one missing. Image
+                                // stays out: it renders a card mockup, which is
+                                // not what arbitrary text is.
+                                Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    enabled = batchFound,
-                                    onClick = {
-                                        clipboard.setText(AnnotatedString(batchMasked))
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        scope.launch { snackbarHostState.showSnackbar("Copied masked text") }
-                                    }
-                                ) { Text("Copy result") }
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        modifier = Modifier.weight(2f),
+                                        enabled = batchFound,
+                                        contentPadding = PaddingValues(horizontal = 4.dp),
+                                        onClick = {
+                                            clipboard.setText(AnnotatedString(batchMasked))
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar("Copied masked text")
+                                            }
+                                        }
+                                    ) { Text("Copy result", maxLines = 1, softWrap = false) }
+
+                                    OutlinedButton(
+                                        modifier = Modifier.weight(1f),
+                                        enabled = batchFound,
+                                        contentPadding = PaddingValues(horizontal = 4.dp),
+                                        onClick = {
+                                            val send = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_TEXT, batchMasked)
+                                            }
+                                            context.startActivity(Intent.createChooser(send, null))
+                                        }
+                                    ) { Text("Share", maxLines = 1, softWrap = false) }
+
+                                    OutlinedButton(
+                                        modifier = Modifier.weight(1f),
+                                        enabled = batchText.isNotEmpty(),
+                                        contentPadding = PaddingValues(horizontal = 4.dp),
+                                        onClick = {
+                                            batchText = ""
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        }
+                                    ) { Text("Clear", maxLines = 1, softWrap = false) }
+                                }
                             }
                         }
                     }
@@ -699,7 +743,20 @@ class MainActivity : ComponentActivity() {
                                             prefs.maskSymbolIndex = index
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         },
-                                        label = { Text(symbol.toString()) }
+                                        // The glyph is the whole label, so without
+                                        // this a screen reader offers ten chips
+                                        // announced as "bullet", "caret" or
+                                        // nothing at all.
+                                        modifier = Modifier.semantics {
+                                            contentDescription =
+                                                "Mask with ${MASK_SYMBOL_NAMES[index]}"
+                                        },
+                                        label = {
+                                            Text(
+                                                text = symbol.toString(),
+                                                modifier = Modifier.clearAndSetSemantics { }
+                                            )
+                                        }
                                     )
                                 }
                             }
@@ -792,6 +849,13 @@ private fun CardHero(
                 Brush.linearGradient(listOf(CardGradTop, CardGradMid, CardGradBottom))
             )
             .padding(20.dp)
+            // The number below is built one character at a time so the kept
+            // digits can be tinted, which leaves a screen reader reciting
+            // "asterisk asterisk asterisk…" sixteen times and never saying what
+            // it is looking at. One coherent sentence replaces the whole card.
+            .clearAndSetSemantics {
+                contentDescription = heroDescription(masked, brand, luhnOk, hasInput)
+            }
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -853,6 +917,35 @@ private fun CardHero(
 }
 
 /**
+ * What the hero says to a screen reader.
+ *
+ * Counts rather than recites: sixteen mask glyphs read out individually are
+ * noise, and the useful facts are the brand, how much is hidden and which digits
+ * survived. The revealed digits are spaced so they are read one by one — "1 1 1
+ * 1" rather than "one thousand one hundred and eleven".
+ */
+private fun heroDescription(
+    masked: String,
+    brand: String,
+    luhnOk: Boolean,
+    hasInput: Boolean
+): String {
+    if (!hasInput) return "Your masked card appears here"
+    val revealed = masked.filter { it.isDigit() }
+    val hidden = masked.count { !it.isDigit() && it != ' ' && it != '-' }
+    return buildString {
+        append(brand)
+        append(" card, ")
+        append(if (hidden == 1) "1 digit hidden" else "$hidden digits hidden")
+        if (revealed.isNotEmpty()) {
+            append(", showing ")
+            append(revealed.toCharArray().joinToString(" "))
+        }
+        if (luhnOk) append(", checksum valid")
+    }
+}
+
+/**
  * Two-tone the masked string in a single annotated string: kept digits in mint,
  * mask glyphs muted. Separators are dropped and the value is regrouped into 4s.
  */
@@ -872,21 +965,38 @@ private fun buildHeroNumber(masked: String, mutedColor: Color): AnnotatedString 
     }
 }
 
-/** Header overflow menu for switching between System / Light / Dark themes. */
+/**
+ * Header overflow menu for switching between System / Light / Dark themes.
+ *
+ * The trigger is a bare `⋮` glyph rather than an icon, which made it two
+ * separate accessibility failures: a screen reader announced the character and
+ * nothing about what it does, and at `titleLarge` plus 10dp of padding the touch
+ * target came out well under the 48dp minimum. The glyph is now decorative and
+ * the box around it carries the role, the label and the size.
+ */
 @Composable
 private fun ThemeMenu(themeMode: ThemeMode, onThemeChange: (ThemeMode) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
     Box {
-        Text(
-            text = "⋮",
-            style = MaterialTheme.typography.titleLarge,
-            color = colors.onBackground,
+        Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(50))
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "Theme, currently ${themeMode.name.lowercase()}"
+                }
                 .clickable { expanded = true }
-                .padding(horizontal = 10.dp, vertical = 2.dp)
-        )
+                .size(48.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "⋮",
+                style = MaterialTheme.typography.titleLarge,
+                color = colors.onBackground,
+                modifier = Modifier.clearAndSetSemantics { }
+            )
+        }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             val options = listOf(
                 "System" to ThemeMode.System,
