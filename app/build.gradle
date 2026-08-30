@@ -103,4 +103,7 @@ dependencies {
 
     // Admob
     implementation libs.play.services.ads
+    // Consent. Already on the classpath through play-services-ads, but this
+    // app calls the API directly, so it is declared rather than inherited.
+    implementation libs.user.messaging.platform
 }

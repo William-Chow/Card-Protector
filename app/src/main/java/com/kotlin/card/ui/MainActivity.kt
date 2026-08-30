@@ -37,6 +37,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -121,6 +122,7 @@ import com.kotlin.card.ui.theme.Success
 import com.kotlin.card.ui.theme.TextPrimary
 import com.kotlin.card.ui.theme.ThemeMode
 import com.kotlin.card.ui.theme.successAccent
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -171,6 +173,20 @@ class MainActivity : ComponentActivity() {
     private var sharedText by mutableStateOf<String?>(null)
     private var shareToken by mutableStateOf(0)
 
+    /**
+     * Ad state, gated on consent.
+     *
+     * [adsAllowed] keeps the banner out of the layout entirely until an ad may
+     * legally be requested, rather than composing an `AdView` that quietly fails
+     * — an empty 50dp gap is a worse answer than no gap. [adsInitialized] exists
+     * because `AdConsent.gather` may resolve twice and `MobileAds.initialize` is
+     * a once-per-process call.
+     */
+    private var adsAllowed by mutableStateOf(false)
+    private var privacyOptionsRequired by mutableStateOf(false)
+    private val adsInitialized = AtomicBoolean(false)
+    private lateinit var adConsent: AdConsent
+
     private lateinit var inAppUpdate: InAppUpdate
     private val appUpdateResultLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
@@ -201,12 +217,20 @@ class MainActivity : ComponentActivity() {
                     onThemeChange = {
                         themeMode = it
                         prefs.themeMode = it
-                    }
+                    },
+                    adsAllowed = adsAllowed,
+                    privacyOptionsRequired = privacyOptionsRequired,
+                    onPrivacyOptions = ::showPrivacyOptions
                 )
             }
         }
 
-        MobileAds.initialize(this) { loadInterstitial() }
+        // Consent first, ads second. Calling MobileAds.initialize here
+        // unconditionally — which is what this line used to do — makes the ad
+        // request before the EEA user has been asked anything, which is the
+        // exact ordering the policy is about.
+        adConsent = AdConsent(this)
+        adConsent.gather(::onConsentResolved)
         inAppUpdate = InAppUpdate(
             activity = this@MainActivity,
             updateLauncher = appUpdateResultLauncher,
@@ -244,6 +268,28 @@ class MainActivity : ComponentActivity() {
         else -> null
     }
 
+    /**
+     * Consent has settled. Safe to call more than once — see [AdConsent.gather].
+     */
+    private fun onConsentResolved() {
+        privacyOptionsRequired = adConsent.privacyOptionsRequired
+        if (!adConsent.canRequestAds) return
+        adsAllowed = true
+        if (adsInitialized.compareAndSet(false, true)) {
+            MobileAds.initialize(this) { loadInterstitial() }
+        }
+    }
+
+    /** Let the user change the answer they gave. Reached from the overflow menu. */
+    private fun showPrivacyOptions() {
+        adConsent.showPrivacyOptions {
+            // The choice may have gone either way, so re-read rather than assume:
+            // withdrawing consent has to actually stop the next ad request.
+            privacyOptionsRequired = adConsent.privacyOptionsRequired
+            adsAllowed = adConsent.canRequestAds
+        }
+    }
+
     private fun loadInterstitial() {
         InterstitialAd.load(
             this@MainActivity,
@@ -267,6 +313,9 @@ class MainActivity : ComponentActivity() {
      * failed ad simply shows nothing extra instead of blocking the output.
      */
     private fun showInterstitial() {
+        // Without this the reload below would fire an ad request on a user who
+        // declined, or who was never asked because no form is published yet.
+        if (!adsAllowed) return
         val ad = mInterstitialAd
         if (ad == null) {
             loadInterstitial()
@@ -304,7 +353,10 @@ class MainActivity : ComponentActivity() {
         prefs: RedactPrefs,
         onCommit: () -> Unit,
         themeMode: ThemeMode,
-        onThemeChange: (ThemeMode) -> Unit
+        onThemeChange: (ThemeMode) -> Unit,
+        adsAllowed: Boolean,
+        privacyOptionsRequired: Boolean,
+        onPrivacyOptions: () -> Unit
     ) {
         val context = LocalContext.current
         val clipboard = LocalClipboardManager.current
@@ -424,23 +476,34 @@ class MainActivity : ComponentActivity() {
                                 .border(1.dp, colors.successAccent, RoundedCornerShape(50))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         )
-                        ThemeMenu(themeMode = themeMode, onThemeChange = onThemeChange)
+                        OverflowMenu(
+                            themeMode = themeMode,
+                            onThemeChange = onThemeChange,
+                            privacyOptionsRequired = privacyOptionsRequired,
+                            onPrivacyOptions = onPrivacyOptions
+                        )
                     }
                 }
 
                 // ── Fenced banner ad slot ────────────────────────────────────
-                AndroidView(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp),
-                    factory = { ctx ->
-                        AdView(ctx).apply {
-                            setAdSize(AdSize.BANNER)
-                            adUnitId = BuildConfig.ADMOB_BANNER
-                            loadAd(AdRequest.Builder().build())
+                // Composed only once consent allows an ad request. Keeping the
+                // AdView out of the tree rather than letting it fail quietly is
+                // what stops an empty 50dp gap sitting under the header for
+                // every user who declined or was never asked.
+                if (adsAllowed) {
+                    AndroidView(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp),
+                        factory = { ctx ->
+                            AdView(ctx).apply {
+                                setAdSize(AdSize.BANNER)
+                                adUnitId = BuildConfig.ADMOB_BANNER
+                                loadAd(AdRequest.Builder().build())
+                            }
                         }
-                    }
-                )
+                    )
+                }
 
                 // ── Single / Batch mode tabs ─────────────────────────────────
                 SingleChoiceSegmentedButtonRow(
@@ -975,7 +1038,12 @@ private fun buildHeroNumber(masked: String, mutedColor: Color): AnnotatedString 
  * the box around it carries the role, the label and the size.
  */
 @Composable
-private fun ThemeMenu(themeMode: ThemeMode, onThemeChange: (ThemeMode) -> Unit) {
+private fun OverflowMenu(
+    themeMode: ThemeMode,
+    onThemeChange: (ThemeMode) -> Unit,
+    privacyOptionsRequired: Boolean,
+    onPrivacyOptions: () -> Unit
+) {
     var expanded by remember { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
     Box {
@@ -1012,6 +1080,20 @@ private fun ThemeMenu(themeMode: ThemeMode, onThemeChange: (ThemeMode) -> Unit) 
                     },
                     trailingIcon = {
                         if (themeMode == mode) Text(text = "✓", color = colors.primary)
+                    }
+                )
+            }
+            // Shown only where the consent SDK says it is required, which is
+            // where a user who consented must be able to change their mind. An
+            // app that gathers consent correctly on first run and then offers no
+            // way back is still out of policy.
+            if (privacyOptionsRequired) {
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("Privacy options") },
+                    onClick = {
+                        expanded = false
+                        onPrivacyOptions()
                     }
                 )
             }
