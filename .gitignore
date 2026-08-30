@@ -15,3 +15,15 @@
 local.properties
 key.properties
 *.jks
+
+# Signing material. The upload keystore and the Play encryption key were tracked
+# here until now; untracking them stops the bleeding but does NOT remove them
+# from history — the upload key still has to be rotated in the Play Console.
+/app/keystore/
+*.pepk
+*.keystore
+
+# Build output. app-release.aab was 7.5 MB of binary in every clone.
+/app/release/
+*.aab
+*.apk
