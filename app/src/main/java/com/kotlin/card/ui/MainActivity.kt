@@ -69,6 +69,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -99,7 +102,6 @@ import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 import com.kotlin.card.BuildConfig
 import com.kotlin.card.R
 import com.kotlin.card.data.MASK_SYMBOLS
-import com.kotlin.card.data.MASK_SYMBOL_NAMES
 import com.kotlin.card.data.RedactPrefs
 import com.kotlin.card.filter.CardTools
 import com.kotlin.card.filter.MAX_REVEALED_DIGITS
@@ -389,6 +391,10 @@ class MainActivity : ComponentActivity() {
         var consumedShareToken by rememberSaveable { mutableStateOf(0) }
 
         val symbols = MASK_SYMBOLS
+        val symbolNames = stringArrayResource(R.array.mask_symbol_names)
+        // The engine's summarizeCounts stays Android-free; this is how the
+        // string it builds gets translated.
+        val typeLabel = remember(context) { typeLabeller(context) }
         val maskSymbol = symbols[maskSymbolIndex.coerceIn(symbols.indices)]
         val (keepLeading, keepTrailing) = keepCounts(maskMode, keepN.coerceIn(0, MAX_REVEALED_DIGITS))
         val policy = MaskPolicy(maskSymbol, keepLeading, keepTrailing)
@@ -434,7 +440,7 @@ class MainActivity : ComponentActivity() {
         }
         val batchResult = syncBatch ?: asyncBatch
         val batchMasked = batchResult.output
-        val batchSummary = summarizeCounts(batchResult.counts)
+        val batchSummary = summarizeCounts(batchResult.counts, typeLabel)
         val batchFound = batchResult.counts.isNotEmpty()
 
         val hasInput = cardNumber.isNotEmpty()
@@ -469,7 +475,7 @@ class MainActivity : ComponentActivity() {
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = "On-device",
+                            text = getString(R.string.on_device),
                             style = MaterialTheme.typography.labelMedium,
                             color = colors.successAccent,
                             modifier = Modifier
@@ -515,12 +521,12 @@ class MainActivity : ComponentActivity() {
                         selected = screenMode == ScreenMode.Single,
                         onClick = { screenMode = ScreenMode.Single },
                         shape = SegmentedButtonDefaults.itemShape(0, 2)
-                    ) { Text("Single card") }
+                    ) { Text(getString(R.string.tab_single)) }
                     SegmentedButton(
                         selected = screenMode == ScreenMode.Batch,
                         onClick = { screenMode = ScreenMode.Batch },
                         shape = SegmentedButtonDefaults.itemShape(1, 2)
-                    ) { Text("Batch text") }
+                    ) { Text(getString(R.string.tab_batch)) }
                 }
 
                 Column(
@@ -556,9 +562,9 @@ class MainActivity : ComponentActivity() {
                                 onClick = {
                                     clipboard.setText(AnnotatedString(singleMasked))
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    scope.launch { snackbarHostState.showSnackbar("Copied masked card") }
+                                    scope.launch { snackbarHostState.showSnackbar(getString(R.string.copied_card)) }
                                 }
-                            ) { Text("Copy", maxLines = 1, softWrap = false) }
+                            ) { Text(getString(R.string.action_copy), maxLines = 1, softWrap = false) }
 
                             OutlinedButton(
                                 modifier = Modifier.weight(1f),
@@ -571,7 +577,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     context.startActivity(Intent.createChooser(send, null))
                                 }
-                            ) { Text("Share", maxLines = 1, softWrap = false) }
+                            ) { Text(getString(R.string.action_share), maxLines = 1, softWrap = false) }
 
                             OutlinedButton(
                                 modifier = Modifier.weight(1f),
@@ -579,11 +585,15 @@ class MainActivity : ComponentActivity() {
                                 contentPadding = actionPadding,
                                 onClick = {
                                     scope.launch {
-                                        val bitmap = renderCardBitmap(singleMasked, brand)
+                                        val bitmap = renderCardBitmap(
+                                            singleMasked,
+                                            brand,
+                                            getString(R.string.image_footer)
+                                        )
                                         shareCardImage(context, bitmap)
                                     }
                                 }
-                            ) { Text("Image", maxLines = 1, softWrap = false) }
+                            ) { Text(getString(R.string.action_image), maxLines = 1, softWrap = false) }
 
                             OutlinedButton(
                                 modifier = Modifier.weight(1f),
@@ -593,7 +603,7 @@ class MainActivity : ComponentActivity() {
                                     cardNumber = ""
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 }
-                            ) { Text("Clear", maxLines = 1, softWrap = false) }
+                            ) { Text(getString(R.string.action_clear), maxLines = 1, softWrap = false) }
                         }
 
                         Spacer(Modifier.height(14.dp))
@@ -631,26 +641,30 @@ class MainActivity : ComponentActivity() {
                                         } else {
                                             scope.launch {
                                                 snackbarHostState.showSnackbar(
-                                                    "That is over the ${MAX_BATCH_CHARS / 1024} KB limit — paste a smaller piece"
+                                                    getString(R.string.batch_over_limit, MAX_BATCH_CHARS / 1024)
                                                 )
                                             }
                                         }
                                     },
                                     modifier = Modifier.fillMaxWidth(),
-                                    label = { Text("Paste text to redact") },
+                                    label = { Text(getString(R.string.batch_hint)) },
                                     minLines = 4,
                                     maxLines = 8,
                                     textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace)
                                 )
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    text = if (batchFound) "$batchSummary found" else "Nothing sensitive detected",
+                                    text = if (batchFound) {
+                                        getString(R.string.batch_found, batchSummary)
+                                    } else {
+                                        getString(R.string.batch_nothing)
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = if (batchFound) colors.successAccent else colors.onSurfaceVariant
                                 )
                                 Spacer(Modifier.height(16.dp))
                                 Text(
-                                    text = "Result",
+                                    text = getString(R.string.result),
                                     style = MaterialTheme.typography.labelLarge,
                                     color = colors.onSurfaceVariant
                                 )
@@ -664,7 +678,7 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     SelectionContainer {
                                         Text(
-                                            text = batchMasked.ifEmpty { "Masked text appears here" },
+                                            text = batchMasked.ifEmpty { getString(R.string.result_placeholder) },
                                             fontFamily = FontFamily.Monospace,
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = if (batchMasked.isEmpty()) colors.onSurfaceVariant else colors.onSurface
@@ -691,10 +705,10 @@ class MainActivity : ComponentActivity() {
                                             clipboard.setText(AnnotatedString(batchMasked))
                                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                             scope.launch {
-                                                snackbarHostState.showSnackbar("Copied masked text")
+                                                snackbarHostState.showSnackbar(getString(R.string.copied_text))
                                             }
                                         }
-                                    ) { Text("Copy result", maxLines = 1, softWrap = false) }
+                                    ) { Text(getString(R.string.action_copy_result), maxLines = 1, softWrap = false) }
 
                                     OutlinedButton(
                                         modifier = Modifier.weight(1f),
@@ -707,7 +721,7 @@ class MainActivity : ComponentActivity() {
                                             }
                                             context.startActivity(Intent.createChooser(send, null))
                                         }
-                                    ) { Text("Share", maxLines = 1, softWrap = false) }
+                                    ) { Text(getString(R.string.action_share), maxLines = 1, softWrap = false) }
 
                                     OutlinedButton(
                                         modifier = Modifier.weight(1f),
@@ -717,7 +731,7 @@ class MainActivity : ComponentActivity() {
                                             batchText = ""
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         }
-                                    ) { Text("Clear", maxLines = 1, softWrap = false) }
+                                    ) { Text(getString(R.string.action_clear), maxLines = 1, softWrap = false) }
                                 }
                             }
                         }
@@ -735,21 +749,21 @@ class MainActivity : ComponentActivity() {
                             // 10 reveals ten digits of their IC too — it does
                             // not, and SliderScopeTest asserts that mechanically.
                             Text(
-                                text = "Reveal — card numbers only",
+                                text = getString(R.string.reveal_title),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = colors.onSurfaceVariant
                             )
                             Text(
-                                text = "Other types use fixed safe defaults.",
+                                text = getString(R.string.reveal_subtitle),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = colors.onSurfaceVariant
                             )
                             Spacer(Modifier.height(6.dp))
                             SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                                 val modes = listOf(
-                                    "Last" to MaskMode.LAST,
-                                    "First" to MaskMode.FIRST,
-                                    "6 + 4" to MaskMode.FIRST6_LAST4
+                                    getString(R.string.mode_last) to MaskMode.LAST,
+                                    getString(R.string.mode_first) to MaskMode.FIRST,
+                                    getString(R.string.mode_first6_last4) to MaskMode.FIRST6_LAST4
                                 )
                                 modes.forEachIndexed { index, (label, mode) ->
                                     SegmentedButton(
@@ -776,11 +790,13 @@ class MainActivity : ComponentActivity() {
                             }
                             Text(
                                 text = when (maskMode) {
-                                    MaskMode.FIRST6_LAST4 -> "Showing first 6 + last 4"
+                                    MaskMode.FIRST6_LAST4 -> getString(R.string.reveal_first6_last4)
                                     MaskMode.LAST ->
-                                        if (keepN == 0) "Masking every digit" else "Keeping last $keepN"
+                                        if (keepN == 0) getString(R.string.reveal_none)
+                                        else getString(R.string.reveal_last_n, keepN)
                                     MaskMode.FIRST ->
-                                        if (keepN == 0) "Masking every digit" else "Keeping first $keepN"
+                                        if (keepN == 0) getString(R.string.reveal_none)
+                                        else getString(R.string.reveal_first_n, keepN)
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = colors.onSurfaceVariant
@@ -812,7 +828,10 @@ class MainActivity : ComponentActivity() {
                                         // nothing at all.
                                         modifier = Modifier.semantics {
                                             contentDescription =
-                                                "Mask with ${MASK_SYMBOL_NAMES[index]}"
+                                                getString(
+                                                R.string.mask_with,
+                                                symbolNames.getOrElse(index) { symbol.toString() }
+                                            )
                                         },
                                         label = {
                                             Text(
@@ -854,7 +873,7 @@ class MainActivity : ComponentActivity() {
                         clipboard.setText(AnnotatedString(if (single) singleMasked else batchMasked))
                         scope.launch {
                             snackbarHostState.showSnackbar(
-                                if (single) "Copied masked card" else "Copied masked text"
+                                getString(if (single) R.string.copied_card else R.string.copied_text)
                             )
                         }
                         onCommit()
@@ -862,9 +881,9 @@ class MainActivity : ComponentActivity() {
                 ) {
                     Text(
                         text = if (screenMode == ScreenMode.Single) {
-                            "Copy masked card"
+                            getString(R.string.cta_copy_card)
                         } else {
-                            "Copy masked text"
+                            getString(R.string.cta_copy_text)
                         }
                     )
                 }
@@ -887,6 +906,9 @@ private fun CardHero(
 ) {
     // Fixed, not colorScheme-derived: the hero is dark in both themes.
     val muted = OnHeroMuted
+    // Resolved here rather than inside the semantics lambda below, which is
+    // not a composable scope.
+    val description = heroDescription(masked, brand, luhnOk, hasInput)
     val scale = remember { Animatable(1f) }
     LaunchedEffect(pulse) {
         if (pulse > 0) {
@@ -916,9 +938,7 @@ private fun CardHero(
             // digits can be tinted, which leaves a screen reader reciting
             // "asterisk asterisk asterisk…" sixteen times and never saying what
             // it is looking at. One coherent sentence replaces the whole card.
-            .clearAndSetSemantics {
-                contentDescription = heroDescription(masked, brand, luhnOk, hasInput)
-            }
+            .clearAndSetSemantics { contentDescription = description }
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
@@ -941,7 +961,7 @@ private fun CardHero(
                     )
                     if (luhnOk) {
                         Text(
-                            text = "✓ valid",
+                            text = stringResource(R.string.hero_valid),
                             color = Success,
                             style = MaterialTheme.typography.labelSmall
                         )
@@ -971,7 +991,9 @@ private fun CardHero(
             Spacer(Modifier.height(16.dp))
 
             Text(
-                text = if (hasInput) "Masked on this device" else "Your masked card appears here",
+                text = stringResource(
+                    if (hasInput) R.string.hero_footer_masked else R.string.hero_footer_empty
+                ),
                 color = muted,
                 style = MaterialTheme.typography.bodySmall
             )
@@ -986,26 +1008,30 @@ private fun CardHero(
  * noise, and the useful facts are the brand, how much is hidden and which digits
  * survived. The revealed digits are spaced so they are read one by one — "1 1 1
  * 1" rather than "one thousand one hundred and eleven".
+ *
+ * Built from three nested templates rather than by gluing fragments together, so
+ * each one stays a whole phrase a translator can reorder.
  */
+@Composable
 private fun heroDescription(
     masked: String,
     brand: String,
     luhnOk: Boolean,
     hasInput: Boolean
 ): String {
-    if (!hasInput) return "Your masked card appears here"
+    if (!hasInput) return stringResource(R.string.hero_footer_empty)
     val revealed = masked.filter { it.isDigit() }
     val hidden = masked.count { !it.isDigit() && it != ' ' && it != '-' }
-    return buildString {
-        append(brand)
-        append(" card, ")
-        append(if (hidden == 1) "1 digit hidden" else "$hidden digits hidden")
-        if (revealed.isNotEmpty()) {
-            append(", showing ")
-            append(revealed.toCharArray().joinToString(" "))
-        }
-        if (luhnOk) append(", checksum valid")
+    var text = stringResource(
+        R.string.hero_a11y,
+        brand,
+        pluralStringResource(R.plurals.digits_hidden, hidden, hidden)
+    )
+    if (revealed.isNotEmpty()) {
+        text = stringResource(R.string.hero_a11y_showing, text, revealed.toCharArray().joinToString(" "))
     }
+    if (luhnOk) text = stringResource(R.string.hero_a11y_valid, text)
+    return text
 }
 
 /**
@@ -1046,13 +1072,21 @@ private fun OverflowMenu(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
+    val themeName = stringResource(
+        when (themeMode) {
+            ThemeMode.System -> R.string.theme_system
+            ThemeMode.Light -> R.string.theme_light
+            ThemeMode.Dark -> R.string.theme_dark
+        }
+    )
+    val menuLabel = stringResource(R.string.theme_menu, themeName)
     Box {
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(50))
                 .semantics {
                     role = Role.Button
-                    contentDescription = "Theme, currently ${themeMode.name.lowercase()}"
+                    contentDescription = menuLabel
                 }
                 .clickable { expanded = true }
                 .size(48.dp),
@@ -1067,9 +1101,9 @@ private fun OverflowMenu(
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             val options = listOf(
-                "System" to ThemeMode.System,
-                "Light" to ThemeMode.Light,
-                "Dark" to ThemeMode.Dark
+                stringResource(R.string.theme_system) to ThemeMode.System,
+                stringResource(R.string.theme_light) to ThemeMode.Light,
+                stringResource(R.string.theme_dark) to ThemeMode.Dark
             )
             options.forEach { (label, mode) ->
                 DropdownMenuItem(
@@ -1090,7 +1124,7 @@ private fun OverflowMenu(
             if (privacyOptionsRequired) {
                 HorizontalDivider()
                 DropdownMenuItem(
-                    text = { Text("Privacy options") },
+                    text = { Text(stringResource(R.string.privacy_options)) },
                     onClick = {
                         expanded = false
                         onPrivacyOptions()

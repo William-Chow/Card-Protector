@@ -17,8 +17,12 @@ import java.io.FileOutputStream
  * Render the masked card as a shareable PNG using the same Vault palette as the
  * on-screen hero: navy gradient, gold chip, brand wordmark, and a mono number
  * whose kept (revealed) digits glow mint while masked glyphs stay muted.
+ *
+ * [footerText] is passed in rather than read from resources here, so this stays
+ * a pure drawing function with no Context — and so the one piece of prose that
+ * gets baked into an image the user shares is translated like everything else.
  */
-fun renderCardBitmap(maskedDigits: String, brand: String): Bitmap {
+fun renderCardBitmap(maskedDigits: String, brand: String, footerText: String): Bitmap {
     val w = 1100
     val h = 693 // ~1.586:1 card ratio
     val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -72,7 +76,7 @@ fun renderCardBitmap(maskedDigits: String, brand: String): Bitmap {
         color = 0xFFA6B0CE.toInt() // OnHeroMuted — see maskedPaint
         textSize = 38f
     }
-    canvas.drawText("Masked on device · Card Pro", 90f, h - 80f, footer)
+    canvas.drawText(footerText, 90f, h - 80f, footer)
 
     return bitmap
 }

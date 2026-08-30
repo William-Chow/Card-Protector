@@ -1,40 +1,149 @@
 <resources>
     <string name="app_name">Card Pro</string>
-    <string name="masked">Masked by</string>
-    <string name="number_ignored">Number Ignored to masked</string>
-    <string name="card_number">Card Number</string>
-    <!-- Label on the text-selection toolbar entry. Declared here only:
-         values-night/strings.xml overrides just the keys it declares, so a key
-         present only in values/ resolves correctly in both day and night. -->
-    <string name="action_redact">Redact</string>
-    <string name="dash">-</string>
-    <string name="submit">Submit</string>
-    <string name="e_g_1_2_3_4_5_6_7_8_9_0_10">E.g. 1,2,3,4,5,6,7,8,9,0,10…</string>
-    <string name="e_g_masked_the_value">E.g. Masked the value, *</string>
-    <string name="option1">!</string>
-    <string name="option2">\@</string>
-    <string name="option3">#</string>
-    <string name="option4">%</string>
-    <string name="option5">^</string>
-    <string name="option6">&amp;</string>
-    <string name="option7">*</string>
-    <string name="option8">$</string>
-    <string name="number1">1</string>
-    <string name="number2">2</string>
-    <string name="number3">3</string>
-    <string name="number4">4</string>
-    <string name="number5">5</string>
-    <string name="number6">6</string>
-    <string name="number7">7</string>
-    <string name="number8">8</string>
-    <string name="number9">9</string>
-    <string name="number0">0</string>
-    <string name="original_input">Original Input</string>
-    <string name="result_input">Result Input</string>
-    <string name="note_total_number_of_value_to_prevent_be_masked">Note*-Total Number of value to prevent be masked</string>
-    <string name="select_0_meaning_all_number_to_be_masked">Select 0 - meaning all number to be masked</string>
 
-    <string name="admob_id">ca-app-pub-4541063798492496~7245676720</string>
-    <string name="admob_banner_ad_unit_id">ca-app-pub-4541063798492496/2428797453</string>
-    <string name="admob_interstitial_ad_unit_id">ca-app-pub-4541063798492496/3877610492</string>
+    <!-- Label on the text-selection toolbar entry, referenced from the manifest. -->
+    <string name="action_redact">Redact</string>
+
+    <!-- ── Main screen ─────────────────────────────────────────────────────── -->
+    <string name="on_device">On-device</string>
+    <string name="tab_single">Single card</string>
+    <string name="tab_batch">Batch text</string>
+    <string name="card_number">Card Number</string>
+
+    <string name="action_copy">Copy</string>
+    <string name="action_share">Share</string>
+    <string name="action_image">Image</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_copy_result">Copy result</string>
+    <string name="cta_copy_card">Copy masked card</string>
+    <string name="cta_copy_text">Copy masked text</string>
+
+    <string name="copied_card">Copied masked card</string>
+    <string name="copied_text">Copied masked text</string>
+    <string name="batch_over_limit">That is over the %1$d KB limit — paste a smaller piece</string>
+
+    <string name="batch_hint">Paste text to redact</string>
+    <string name="batch_found">%1$s found</string>
+    <string name="batch_nothing">Nothing sensitive detected</string>
+    <string name="result">Result</string>
+    <string name="result_placeholder">Masked text appears here</string>
+
+    <!-- ── The Reveal control ──────────────────────────────────────────────── -->
+    <!-- Scoped on purpose: the slider only ever governs card numbers. -->
+    <string name="reveal_title">Reveal — card numbers only</string>
+    <string name="reveal_subtitle">Other types use fixed safe defaults.</string>
+    <string name="mode_last">Last</string>
+    <string name="mode_first">First</string>
+    <string name="mode_first6_last4">6 + 4</string>
+    <string name="reveal_first6_last4">Showing first 6 + last 4</string>
+    <string name="reveal_none">Masking every digit</string>
+    <string name="reveal_last_n">Keeping last %1$d</string>
+    <string name="reveal_first_n">Keeping first %1$d</string>
+
+    <!-- ── Mask glyph picker ───────────────────────────────────────────────── -->
+    <string name="masked">Masked by</string>
+    <string name="mask_with">Mask with %1$s</string>
+    <!-- Spoken names for MASK_SYMBOLS, in the same order. A chip whose whole
+         label is "•" or "^" is announced as "bullet" or as nothing at all. -->
+    <string-array name="mask_symbol_names">
+        <item>asterisk</item>
+        <item>bullet</item>
+        <item>hash</item>
+        <item>letter x</item>
+        <item>dollar sign</item>
+        <item>exclamation mark</item>
+        <item>at sign</item>
+        <item>percent sign</item>
+        <item>caret</item>
+        <item>ampersand</item>
+    </string-array>
+
+    <!-- ── The card hero ───────────────────────────────────────────────────── -->
+    <string name="hero_footer_masked">Masked on this device</string>
+    <!-- Baked into the shared PNG by renderCardBitmap. -->
+    <string name="image_footer">Masked on device · Card Pro</string>
+    <string name="hero_footer_empty">Your masked card appears here</string>
+    <string name="hero_valid">✓ valid</string>
+    <!-- The hero draws its number one character at a time so kept digits can be
+         tinted, which leaves a screen reader reciting "asterisk" sixteen times.
+         These three compose one sentence for it instead; each wraps the one
+         before, so a translator can reorder within each without losing a part. -->
+    <string name="hero_a11y">%1$s card, %2$s</string>
+    <string name="hero_a11y_showing">%1$s, showing %2$s</string>
+    <string name="hero_a11y_valid">%1$s, checksum valid</string>
+    <plurals name="digits_hidden">
+        <item quantity="one">%1$d digit hidden</item>
+        <item quantity="other">%1$d digits hidden</item>
+    </plurals>
+
+    <!-- ── Overflow menu ───────────────────────────────────────────────────── -->
+    <string name="theme_menu">Theme, currently %1$s</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="privacy_options">Privacy options</string>
+
+    <!-- ── The PROCESS_TEXT sheet ──────────────────────────────────────────── -->
+    <string name="sheet_title_oversized">Card Pro · selection is too large</string>
+    <string name="sheet_title_found">Card Pro · %1$s found</string>
+    <string name="sheet_title_none">Card Pro · nothing sensitive found</string>
+    <string name="sheet_oversized_body">This selection is over %1$,d characters. Select a smaller piece of text and try again.</string>
+    <string name="action_replace">Replace selection</string>
+    <string name="note_oversized">Nothing was changed.</string>
+    <string name="note_read_only">This app\'s text can\'t be edited — copy the masked version instead.</string>
+    <string name="note_too_long">Too long to replace in place — copy the masked version instead.</string>
+    <string name="note_replace_warning">Replace changes the text in the other app. This can\'t be undone.</string>
+    <string name="note_nothing">Nothing to mask, so there is nothing to replace.</string>
+    <string name="clip_label_redacted">Redacted text</string>
+
+    <!-- ── "n found" summary ───────────────────────────────────────────────── -->
+    <!-- One entry per SensitiveType. summarizeCounts stays in the filter module,
+         which is deliberately Android-free, and takes these through a labeller
+         rather than reaching for resources itself. -->
+    <plurals name="type_secret">
+        <item quantity="one">%1$d secret</item>
+        <item quantity="other">%1$d secrets</item>
+    </plurals>
+    <plurals name="type_url">
+        <item quantity="one">%1$d link</item>
+        <item quantity="other">%1$d links</item>
+    </plurals>
+    <plurals name="type_email">
+        <item quantity="one">%1$d email</item>
+        <item quantity="other">%1$d emails</item>
+    </plurals>
+    <plurals name="type_iban">
+        <item quantity="one">%1$d IBAN</item>
+        <item quantity="other">%1$d IBANs</item>
+    </plurals>
+    <plurals name="type_nric">
+        <item quantity="one">%1$d IC</item>
+        <item quantity="other">%1$d ICs</item>
+    </plurals>
+    <plurals name="type_phone">
+        <item quantity="one">%1$d phone</item>
+        <item quantity="other">%1$d phones</item>
+    </plurals>
+    <plurals name="type_expiry">
+        <item quantity="one">%1$d expiry date</item>
+        <item quantity="other">%1$d expiry dates</item>
+    </plurals>
+    <plurals name="type_cvv">
+        <item quantity="one">%1$d CVV</item>
+        <item quantity="other">%1$d CVVs</item>
+    </plurals>
+    <plurals name="type_card">
+        <item quantity="one">%1$d card</item>
+        <item quantity="other">%1$d cards</item>
+    </plurals>
+    <plurals name="type_ip">
+        <item quantity="one">%1$d IP</item>
+        <item quantity="other">%1$d IPs</item>
+    </plurals>
+
+    <!-- AdMob application id, referenced from the manifest. The banner and
+         interstitial unit ids live in build.gradle as BuildConfig fields, so
+         debug builds cannot serve production ads; they are deliberately not
+         duplicated here. -->
+    <string name="admob_id" translatable="false">ca-app-pub-4541063798492496~7245676720</string>
 </resources>

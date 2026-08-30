@@ -65,6 +65,24 @@ class OverlapTest {
     }
 
     @Test
+    fun `summarizeCounts renders through the labeller it is given`() {
+        // The UI passes one backed by <plurals> resources so the summary line is
+        // translated. What must survive that is the ordering and the separator,
+        // which live here rather than in the caller.
+        val counts = mapOf(
+            SensitiveType.CARD to 2,
+            SensitiveType.MY_NRIC to 1,
+            SensitiveType.CVV to 1
+        )
+        assertEquals("1 IC · 1 CVV · 2 cards", summarizeCounts(counts))
+        assertEquals(
+            "1:MY_NRIC · 1:CVV · 2:CARD",
+            summarizeCounts(counts) { type, count -> "$count:$type" }
+        )
+        assertEquals("", summarizeCounts(emptyMap()) { _, _ -> "never" })
+    }
+
+    @Test
     fun `the registry is ordered by priority`() {
         assertEquals(Redactor.types.sortedBy { it.priority }, Redactor.types)
         assertEquals(SensitiveType.entries.size, Redactor.types.size)

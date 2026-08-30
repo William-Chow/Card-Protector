@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Bahasa Melayu.
+
+    The detectors in this app are Malaysia-specific — MyKad numbers, 01X/03
+    phone formats, the 1-300 and 1-800 service-line filter, Malay enumerator
+    words in the IPv4 guard — while the interface was English only. This is the
+    other half of that.
+
+    app_name is carried over unchanged rather than left out: it is the product
+    name, and declaring it keeps lint's MissingTranslation honest about the rest.
+-->
+<resources>
+    <string name="app_name">Card Pro</string>
+    <string name="action_redact">Tapis</string>
+
+    <!-- ── Skrin utama ─────────────────────────────────────────────────────── -->
+    <string name="on_device">Dalam peranti</string>
+    <string name="tab_single">Satu kad</string>
+    <string name="tab_batch">Teks pukal</string>
+    <string name="card_number">Nombor Kad</string>
+
+    <string name="action_copy">Salin</string>
+    <string name="action_share">Kongsi</string>
+    <string name="action_image">Imej</string>
+    <string name="action_clear">Kosongkan</string>
+    <string name="action_copy_result">Salin keputusan</string>
+    <string name="cta_copy_card">Salin kad bertopeng</string>
+    <string name="cta_copy_text">Salin teks bertopeng</string>
+
+    <string name="copied_card">Kad bertopeng disalin</string>
+    <string name="copied_text">Teks bertopeng disalin</string>
+    <string name="batch_over_limit">Melebihi had %1$d KB — tampal bahagian yang lebih kecil</string>
+
+    <string name="batch_hint">Tampal teks untuk ditapis</string>
+    <string name="batch_found">%1$s dijumpai</string>
+    <string name="batch_nothing">Tiada maklumat sensitif dikesan</string>
+    <string name="result">Keputusan</string>
+    <string name="result_placeholder">Teks bertopeng akan muncul di sini</string>
+
+    <!-- ── Kawalan Dedah ───────────────────────────────────────────────────── -->
+    <string name="reveal_title">Dedah — nombor kad sahaja</string>
+    <string name="reveal_subtitle">Jenis lain menggunakan tetapan selamat yang tetap.</string>
+    <string name="mode_last">Akhir</string>
+    <string name="mode_first">Awal</string>
+    <string name="mode_first6_last4">6 + 4</string>
+    <string name="reveal_first6_last4">Menunjukkan 6 awal + 4 akhir</string>
+    <string name="reveal_none">Menopeng semua digit</string>
+    <string name="reveal_last_n">Mengekalkan %1$d akhir</string>
+    <string name="reveal_first_n">Mengekalkan %1$d awal</string>
+
+    <!-- ── Pemilih simbol topeng ───────────────────────────────────────────── -->
+    <string name="masked">Ditopeng dengan</string>
+    <string name="mask_with">Topeng dengan %1$s</string>
+    <string-array name="mask_symbol_names">
+        <item>bintang</item>
+        <item>bulatan</item>
+        <item>pagar</item>
+        <item>huruf x</item>
+        <item>tanda dolar</item>
+        <item>tanda seru</item>
+        <item>tanda at</item>
+        <item>tanda peratus</item>
+        <item>karet</item>
+        <item>ampersan</item>
+    </string-array>
+
+    <!-- ── Kad utama ───────────────────────────────────────────────────────── -->
+    <string name="hero_footer_masked">Ditopeng dalam peranti ini</string>
+    <string name="image_footer">Ditopeng dalam peranti · Card Pro</string>
+    <string name="hero_footer_empty">Kad bertopeng anda akan muncul di sini</string>
+    <string name="hero_valid">✓ sah</string>
+    <string name="hero_a11y">Kad %1$s, %2$s</string>
+    <string name="hero_a11y_showing">%1$s, menunjukkan %2$s</string>
+    <string name="hero_a11y_valid">%1$s, checksum sah</string>
+    <plurals name="digits_hidden">
+        <item quantity="other">%1$d digit disembunyikan</item>
+    </plurals>
+
+    <!-- ── Menu limpahan ───────────────────────────────────────────────────── -->
+    <string name="theme_menu">Tema, kini %1$s</string>
+    <string name="theme_system">Sistem</string>
+    <string name="theme_light">Cerah</string>
+    <string name="theme_dark">Gelap</string>
+    <string name="privacy_options">Pilihan privasi</string>
+
+    <!-- ── Helaian PROCESS_TEXT ────────────────────────────────────────────── -->
+    <string name="sheet_title_oversized">Card Pro · pilihan terlalu besar</string>
+    <string name="sheet_title_found">Card Pro · %1$s dijumpai</string>
+    <string name="sheet_title_none">Card Pro · tiada maklumat sensitif</string>
+    <string name="sheet_oversized_body">Pilihan ini melebihi %1$,d aksara. Pilih teks yang lebih pendek dan cuba lagi.</string>
+    <string name="action_replace">Ganti pilihan</string>
+    <string name="note_oversized">Tiada apa-apa diubah.</string>
+    <string name="note_read_only">Teks apl itu tidak boleh disunting — salin versi bertopeng sebagai ganti.</string>
+    <string name="note_too_long">Terlalu panjang untuk diganti di tempat — salin versi bertopeng sebagai ganti.</string>
+    <string name="note_replace_warning">Ganti akan mengubah teks dalam apl itu. Tindakan ini tidak boleh dibatalkan.</string>
+    <string name="note_nothing">Tiada apa-apa untuk ditopeng, jadi tiada apa-apa untuk diganti.</string>
+    <string name="clip_label_redacted">Teks bertopeng</string>
+
+    <!-- ── Ringkasan "n dijumpai" ──────────────────────────────────────────── -->
+    <!-- Malay does not inflect for number, so each of these carries only the
+         "other" form and Android resolves every count to it. -->
+    <plurals name="type_secret">
+        <item quantity="other">%1$d rahsia</item>
+    </plurals>
+    <plurals name="type_url">
+        <item quantity="other">%1$d pautan</item>
+    </plurals>
+    <plurals name="type_email">
+        <item quantity="other">%1$d e-mel</item>
+    </plurals>
+    <plurals name="type_iban">
+        <item quantity="other">%1$d IBAN</item>
+    </plurals>
+    <plurals name="type_nric">
+        <item quantity="other">%1$d IC</item>
+    </plurals>
+    <plurals name="type_phone">
+        <item quantity="other">%1$d telefon</item>
+    </plurals>
+    <plurals name="type_expiry">
+        <item quantity="other">%1$d tarikh luput</item>
+    </plurals>
+    <plurals name="type_cvv">
+        <item quantity="other">%1$d CVV</item>
+    </plurals>
+    <plurals name="type_card">
+        <item quantity="other">%1$d kad</item>
+    </plurals>
+    <plurals name="type_ip">
+        <item quantity="other">%1$d IP</item>
+    </plurals>
+</resources>

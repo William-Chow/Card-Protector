@@ -33,8 +33,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.kotlin.card.R
 import com.kotlin.card.data.RedactPrefs
 import com.kotlin.card.filter.summarizeCounts
 import com.kotlin.card.ui.theme.CardProTheme
@@ -103,7 +106,7 @@ class RedactActivity : ComponentActivity() {
     private fun copyToClipboard(redacted: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         // A label, so the Android 13+ clipboard preview says what was copied.
-        clipboard.setPrimaryClip(ClipData.newPlainText("Redacted text", redacted))
+        clipboard.setPrimaryClip(ClipData.newPlainText(getString(R.string.clip_label_redacted), redacted))
         finish()
     }
 }
@@ -115,8 +118,9 @@ private fun RedactSheet(
     onCopy: (String) -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
+    val context = LocalContext.current
     val result = decision.result
-    val summary = summarizeCounts(result.counts)
+    val summary = summarizeCounts(result.counts, typeLabeller(context))
     val found = decision.found
     val oversized = decision.oversized
     val readOnly = decision.readOnly
@@ -132,9 +136,9 @@ private fun RedactSheet(
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = when {
-                        oversized -> "Card Pro · selection is too large"
-                        found -> "Card Pro · $summary found"
-                        else -> "Card Pro · nothing sensitive found"
+                        oversized -> stringResource(R.string.sheet_title_oversized)
+                        found -> stringResource(R.string.sheet_title_found, summary)
+                        else -> stringResource(R.string.sheet_title_none)
                     },
                     style = MaterialTheme.typography.labelLarge,
                     color = if (found) colors.successAccent else colors.onSurfaceVariant
@@ -154,8 +158,7 @@ private fun RedactSheet(
                     SelectionContainer {
                         Text(
                             text = if (oversized) {
-                                "This selection is over 200,000 characters. " +
-                                    "Select a smaller piece of text and try again."
+                                stringResource(R.string.sheet_oversized_body, MAX_INBOUND_CHARS)
                             } else {
                                 result.output
                             },
@@ -180,25 +183,39 @@ private fun RedactSheet(
                             modifier = Modifier.weight(2f),
                             enabled = decision.canReplace,
                             onClick = { onReplace(result.output) }
-                        ) { Text("Replace selection", maxLines = 1, softWrap = false) }
+                        ) {
+                            Text(
+                                text = stringResource(R.string.action_replace),
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                     }
                     OutlinedButton(
                         modifier = Modifier.weight(1f),
                         enabled = decision.canCopy,
                         onClick = { onCopy(result.output) }
-                    ) { Text("Copy", maxLines = 1, softWrap = false) }
+                    ) {
+                        Text(
+                            text = stringResource(R.string.action_copy),
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(8.dp))
 
                 Text(
-                    text = when {
-                        oversized -> "Nothing was changed."
-                        readOnly -> "This app's text can't be edited — copy the masked version instead."
-                        tooLongToReplace -> "Too long to replace in place — copy the masked version instead."
-                        found -> "Replace changes the text in the other app. This can't be undone."
-                        else -> "Nothing to mask, so there is nothing to replace."
-                    },
+                    text = stringResource(
+                        when {
+                            oversized -> R.string.note_oversized
+                            readOnly -> R.string.note_read_only
+                            tooLongToReplace -> R.string.note_too_long
+                            found -> R.string.note_replace_warning
+                            else -> R.string.note_nothing
+                        }
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.onSurfaceVariant
                 )

@@ -492,10 +492,20 @@ object Redactor {
 /**
  * "2 cards · 1 phone · 1 IC", or an empty string for nothing found. Lives here
  * rather than in the UI so it stays testable without an Android runtime.
+ *
+ * [label] is how one entry is rendered, and it is a parameter so this function
+ * can stay Android-free while the app it serves is translated. The default is
+ * the English form built from [SensitiveType.label] and [SensitiveType.plural],
+ * which is what the tests pin; the UI passes a labeller backed by `<plurals>`
+ * resources, so a Malay device says "2 kad · 1 telefon · 1 IC" through the same
+ * ordering and the same separator.
  */
-fun summarizeCounts(counts: Map<SensitiveType, Int>): String =
+fun summarizeCounts(
+    counts: Map<SensitiveType, Int>,
+    label: (SensitiveType, Int) -> String = { type, count ->
+        "$count ${if (count == 1) type.label else type.plural}"
+    }
+): String =
     counts.entries
         .sortedBy { it.key.priority }
-        .joinToString(" · ") { (type, count) ->
-            "$count ${if (count == 1) type.label else type.plural}"
-        }
+        .joinToString(" · ") { (type, count) -> label(type, count) }
