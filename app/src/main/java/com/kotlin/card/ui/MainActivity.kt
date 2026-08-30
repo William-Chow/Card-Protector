@@ -720,18 +720,32 @@ class MainActivity : ComponentActivity() {
                         containerColor = Success,
                         contentColor = colors.onSecondary
                     ),
+                    // Both modes put the result on the clipboard. In Single mode
+                    // this button used to do nothing at all but bounce the hero
+                    // and fire the interstitial: masking is live, so there was no
+                    // "mask" left to perform, and the only real terminal action —
+                    // copying — sat in the cramped four-button row above. A
+                    // primary CTA whose only observable effect is an ad is the
+                    // one thing it must not be.
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         commitPulse++
-                        if (screenMode == ScreenMode.Batch) {
-                            clipboard.setText(AnnotatedString(batchMasked))
-                            scope.launch { snackbarHostState.showSnackbar("Copied masked text") }
+                        val single = screenMode == ScreenMode.Single
+                        clipboard.setText(AnnotatedString(if (single) singleMasked else batchMasked))
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                if (single) "Copied masked card" else "Copied masked text"
+                            )
                         }
                         onCommit()
                     }
                 ) {
                     Text(
-                        text = if (screenMode == ScreenMode.Single) "Mask card" else "Copy masked text"
+                        text = if (screenMode == ScreenMode.Single) {
+                            "Copy masked card"
+                        } else {
+                            "Copy masked text"
+                        }
                     )
                 }
             }
