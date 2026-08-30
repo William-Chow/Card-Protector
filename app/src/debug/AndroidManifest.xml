@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Debug-only overlay, merged on top of src/main/AndroidManifest.xml.
+
+    Crash collection is off here. A crash on a developer machine — mid-edit,
+    mid-experiment, against a half-finished screen — is not a signal about the
+    app users are running, and letting those through makes the production
+    dashboard describe the developer's afternoon rather than the release.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <meta-data
+            android:name="firebase_crashlytics_collection_enabled"
+            android:value="false" />
+    </application>
+</manifest>

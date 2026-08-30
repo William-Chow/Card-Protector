@@ -5,6 +5,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.google.services)
+    alias(libs.plugins.firebase.crashlytics)
 }
 
 def keystoreProperties = new Properties()
@@ -49,6 +51,13 @@ android {
             // Google's official AdMob TEST unit IDs — never serve real ads in debug (avoids policy strikes).
             buildConfigField "String", "ADMOB_BANNER", "\"ca-app-pub-3940256099942544/6300978111\""
             buildConfigField "String", "ADMOB_INTERSTITIAL", "\"ca-app-pub-3940256099942544/1033173712\""
+            // Debug is not minified, so there is no mapping to upload, and doing
+            // it anyway costs a network round trip on every build. Collection
+            // itself is switched off in src/debug/AndroidManifest.xml so a crash
+            // on this machine never lands in the production dashboard.
+            firebaseCrashlytics {
+                mappingFileUploadEnabled = false
+            }
         }
         release {
             minifyEnabled = true
@@ -58,6 +67,12 @@ android {
             buildConfigField "String", "ADMOB_INTERSTITIAL", "\"ca-app-pub-4541063798492496/3877610492\""
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.release
+            }
+            // minifyEnabled is true above, so without this every release stack
+            // trace arrives as obfuscated nonsense and the whole exercise is
+            // pointless. This uploads the R8 mapping alongside the build.
+            firebaseCrashlytics {
+                mappingFileUploadEnabled = true
             }
         }
     }
@@ -94,8 +109,12 @@ dependencies {
 
     // Import the Firebase BoM
     implementation platform(libs.firebase.bom)
-    // When using the BoM, don't specify versions in Firebase dependencies
-    // implementation libs.firebase.analytics.ktx
+    // When using the BoM, don't specify versions in Firebase dependencies.
+    // Crashlytics only: this app has no analytics and wants none. Crashlytics
+    // works without Firebase Analytics — it loses crash-free-user rates and
+    // breadcrumb trails, which is a fair trade for not shipping an analytics
+    // SDK inside a privacy tool.
+    implementation libs.firebase.crashlytics
     // In-App Update
     implementation(libs.app.update)
     // For Kotlin users, also import the Kotlin extensions library for Play In-App Update:
