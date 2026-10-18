@@ -16,6 +16,22 @@ package com.kotlin.card.filter
  * lets the card pattern — which already tolerates spaces as separators — see
  * through that. Masking still reads the original substring, and `Char.isDigit()`
  * is Unicode-aware, so a full-width digit is masked as the digit it is.
+ *
+ * **Folded by Unicode category, not by a list of code points.** This used to be
+ * a hand-picked table — full-width and Arabic-Indic digits, the U+2000 spaces,
+ * four zero-width characters — and every character it left out was a working
+ * bypass: `４１１１　１１１１　１１１１　１１１１` (full-width digits split by the
+ * ideographic space a CJK keyboard types), Persian or Devanagari digits, and a
+ * soft hyphen or word joiner wedged between groups each came back with all
+ * sixteen digits in the clear and nothing in the counts. The masker already
+ * counts every Unicode digit as a digit; the scanner has to see every one too,
+ * and every space, dash and invisible format character that can sit between
+ * them. `NormalizeTest` checks the whole Basic Multilingual Plane against
+ * `FOLDED_SEPARATORS`, so a fold cannot widen without the adjacency suites
+ * running over it.
+ *
+ * Accepted residual: digits outside the BMP — the mathematical bold `𝟒` family —
+ * are two `Char`s each and cannot be folded one-for-one, so they are not seen.
  */
 fun normalizeForScan(text: String): String {
     var changed = false
@@ -29,17 +45,24 @@ fun normalizeForScan(text: String): String {
     return if (changed) String(out) else text
 }
 
-private fun fold(ch: Char): Char = when (ch) {
-    // Full-width digits, then Arabic-Indic digits
-    in '\uFF10'..'\uFF19' -> '0' + (ch - '\uFF10')
-    in '\u0660'..'\u0669' -> '0' + (ch - '\u0660')
-    // Hyphen through horizontal bar, and the minus sign
-    in '\u2010'..'\u2015', '\u2212' -> '-'
-    // No-break space and narrow no-break space
-    '\u00A0', '\u202F' -> ' '
-    // En/em/thin/figure and the rest of the U+2000 block spaces
-    in '\u2000'..'\u200A' -> ' '
-    // Zero-width space, non-joiner, joiner, and the byte-order mark
-    '\u200B', '\u200C', '\u200D', '\uFEFF' -> ' '
+private fun fold(ch: Char): Char = when {
+    // Nothing in ASCII folds, and ASCII is nearly every character this sees.
+    ch < '\u0080' -> ch
+    // Every decimal digit system in the BMP: full-width, Arabic-Indic and its
+    // Persian form, Devanagari, Bengali, Thai and the rest.
+    ch.isDigit() -> '0' + ch.digitToInt()
+    // A soft hyphen draws nothing unless a line breaks on it. A dash rather than
+    // the space the other invisible characters get, because it sits *inside*
+    // words: as a space it would cut a password or a URL path in two.
+    ch == '\u00AD' -> '-'
+    // Every dash \u2014 hyphen through horizontal bar, full-width and small
+    // hyphen-minus, the CJK wave dash \u2014 and the minus sign, which is a math
+    // symbol rather than a dash but looks like one.
+    ch == '\u2212' || ch.category == CharCategory.DASH_PUNCTUATION -> '-'
+    // Every space: no-break, narrow no-break, the U+2000 block, ideographic.
+    ch.category == CharCategory.SPACE_SEPARATOR -> ' '
+    // Every invisible format character: zero-width space, joiner and
+    // non-joiner, word joiner, byte-order mark, and the bidi marks.
+    ch.category == CharCategory.FORMAT -> ' '
     else -> ch
 }

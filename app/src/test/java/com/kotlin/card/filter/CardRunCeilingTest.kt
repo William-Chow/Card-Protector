@@ -19,8 +19,8 @@ import kotlin.random.Random
  * nineteen and hands back the other nine, and an engine that matched it exactly
  * would pass while leaking nine digits. Worse, the oracle reads the *raw* text
  * and the engine reads [normalizeForScan]'s output, so the two do not even agree
- * on where a run begins: twenty-four Unicode characters fold onto `' '` or `'-'`
- * and join two numbers into one run for the engine and leave them separate for
+ * on where a run begins: every Unicode space and dash folds onto `' '` or `'-'`
+ * and joins two numbers into one run for the engine but leaves them separate for
  * the oracle. Two rounds of review found leaks in exactly that gap.
  *
  * This property is absolute. It names no oracle, it does not care which detector
@@ -99,7 +99,7 @@ class CardRunCeilingTest {
     // ── The confirmed leaks, one test each ────────────────────────────────────
 
     @Test
-    fun `an account number folded onto a PAN obeys the ceiling, for all 24 separators`() {
+    fun `an account number folded onto a PAN obeys the ceiling, for every folded separator`() {
         for (separator in ALL_SEPARATORS) {
             val input = "Akaun 123456789012${separator}4111 1111 1111 1111"
             for ((leading, trailing) in ALL_KEEP_COUNTS) {

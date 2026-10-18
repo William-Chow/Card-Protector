@@ -72,7 +72,8 @@ fun maskCount(text: String, glyph: Char): Int = text.count { it == glyph }
 fun digitCount(text: String): Int = text.count { it.isDigit() }
 
 /**
- * The twenty-four characters [normalizeForScan] folds onto `' '` or `'-'`.
+ * Every non-ASCII character [normalizeForScan] folds onto `' '` or `'-'`: each
+ * space, dash and invisible format character in the BMP, plus the minus sign.
  *
  * These are the whole reason this file needed a second corpus. The engine scans
  * the *normalized* string, so every one of them joins two numbers into a single
@@ -80,15 +81,16 @@ fun digitCount(text: String): Int = text.count { it.isDigit() }
  * separate numbers. Every sample in this file was ASCII-only, so the entire
  * folded family was invisible to the suite written to catch adjacency leaks.
  *
- * Kept in one list, derived from the same ranges [normalizeForScan] folds, so a
- * new fold cannot be added there without a line here.
+ * Derived from the Unicode categories rather than listed. It used to be a list
+ * of twenty-four, mirroring the normalizer's own hand-picked table, and what
+ * both left out — the ideographic space, the full-width hyphen-minus, the soft
+ * hyphen, the word joiner — was each a working way round the card pattern.
+ * `NormalizeTest` checks the whole BMP against this set in both directions, so
+ * a fold cannot be added there without every adjacency suite running over it.
  */
-val FOLDED_SEPARATORS: List<Char> = buildList {
-    add('\u00A0'); add('\u202F')                            // no-break, narrow no-break
-    for (ch in '\u2000'..'\u200A') add(ch)                  // en/em/thin/figure and the rest
-    add('\u200B'); add('\u200C'); add('\u200D'); add('\uFEFF') // zero-width, non-joiner, joiner, BOM
-    for (ch in '\u2010'..'\u2015') add(ch)                  // hyphen through horizontal bar
-    add('\u2212')                                           // minus sign
+val FOLDED_SEPARATORS: List<Char> = ('\u0080'..'\uFFFF').filter { ch ->
+    ch == '\u2212' || ch.category == CharCategory.SPACE_SEPARATOR ||
+        ch.category == CharCategory.DASH_PUNCTUATION || ch.category == CharCategory.FORMAT
 }
 
 /** Every folded separator, plus the two ASCII characters they fold onto. */

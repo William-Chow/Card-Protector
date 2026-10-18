@@ -25,8 +25,8 @@ import org.junit.Test
  * otherwise.
  *
  * **The shapes below were ASCII-only, and that was the hole a second review
- * walked through.** Twenty-four Unicode characters fold onto `' '` or `'-'`
- * before a detector sees them, so each one makes a collision the *engine* sees
+ * walked through.** Every Unicode space, dash and format character folds onto
+ * `' '` or `'-'` before a detector sees it, so each one makes a collision the *engine* sees
  * and the oracle does not — and a test whose separator is always a plain space
  * is testing the one arrangement where the two agree about where a number ends.
  * Every case here now runs against all of them; [CardRunCeilingTest] is where
@@ -48,7 +48,7 @@ class AdjacencyLeakTest {
 
     /**
      * The same collisions with the value boundary written as each of the
-     * twenty-four folded characters — the family the ASCII-only list above could
+     * folded characters — the family the ASCII-only list above could
      * not express. Only the boundary moves; the values keep their own ASCII
      * punctuation, so an IC still looks like an IC.
      */

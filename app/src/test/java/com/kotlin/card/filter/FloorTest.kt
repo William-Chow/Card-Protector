@@ -84,6 +84,23 @@ class FloorTest {
     }
 
     @Test
+    fun `a PAN a URL host or an email domain keeps verbatim is hidden in any digit system`() {
+        // The floor used to match the raw replacement with CARD_REGEX's
+        // ASCII-only `\d`, so a full-width PAN in a host came back with ten
+        // digits showing — stopped by the run ceiling, not by the floor.
+        for (zero in listOf('0', '\uFF10', '\u0660', '\u06F0', '\u0966')) {
+            val pan = "4111111111111111".map { zero + (it - '0') }.joinToString("")
+            for (sample in listOf("https://$pan.example.com/x", "a@$pan.com")) {
+                for (glyph in MASK_GLYPHS) {
+                    val result = Redactor.redactAllInText(sample, MaskPolicy(glyph))
+                    assertEquals("$sample -> ${result.output}", 0, digitCount(result.output))
+                    assertTrue("$sample gave ${result.counts}", result.counts.containsKey(SensitiveType.CARD))
+                }
+            }
+        }
+    }
+
+    @Test
     fun `a phone never reveals more than three digits of its national body`() {
         for (sample in listOf("+60 12-345 6789", "Tel: 03-1234 5678", "012-3456789", "+8613800138000")) {
             for (glyph in MASK_GLYPHS) {

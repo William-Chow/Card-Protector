@@ -1,5 +1,6 @@
 package com.kotlin.card.filter
 
+import com.kotlin.card.data.MASK_SYMBOLS
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -18,8 +19,38 @@ class NormalizeTest {
         '\u0660', '\u0665', '\u0669',                     // Arabic-Indic digits
         '\u2010', '\u2013', '\u2015', '\u2212',           // dashes and the minus sign
         '\u00A0', '\u202F', '\u2002', '\u2007', '\u2009', // spaces
-        '\u200B', '\u200C', '\u200D', '\uFEFF'            // zero-width and BOM
+        '\u200B', '\u200C', '\u200D', '\uFEFF',           // zero-width and BOM
+        '\u06F4', '\u096A', '\u09E6', '\u0E51',           // Persian, Devanagari, Bengali, Thai digits
+        '\u3000', '\u205F', '\uFF0D', '\uFE63', '\u301C', // ideographic space, more dashes
+        '\u00AD', '\u2060', '\u200E', '\u202A', '\u2066'  // soft hyphen, word joiner, bidi marks
     )
+
+    /** The zero of every digit system the evasion test writes a card in. */
+    private val digitZeros = listOf(
+        '0',      // ASCII
+        '\uFF10', // full-width
+        '\u0660', // Arabic-Indic
+        '\u06F0', // Persian
+        '\u0966', // Devanagari
+        '\u09E6', // Bengali
+        '\u0E50'  // Thai
+    )
+
+    /** [template] with each ASCII digit written from [zero] and each space as [separator]. */
+    private fun write(template: String, zero: Char, separator: Char): String =
+        buildString(template.length) {
+            for (ch in template) {
+                append(
+                    when (ch) {
+                        in '0'..'9' -> zero + (ch - '0')
+                        ' ' -> separator
+                        else -> ch
+                    }
+                )
+            }
+        }
+
+    private fun hex(ch: Char): String = "U+%04X".format(ch.code)
 
     @Test
     fun `length is preserved for every mapped code point`() {
@@ -72,5 +103,58 @@ class NormalizeTest {
         val output = Redactor.redactAllInText(evaded, MaskPolicy('*')).output
         assertTrue("evasion succeeded: $output", output.contains('*'))
         assertEquals(evaded.length, output.length)
+    }
+
+    @Test
+    fun `every Unicode decimal digit folds onto its ASCII value`() {
+        for (ch in '\u0000'..'\uFFFF') {
+            if (!ch.isDigit()) continue
+            assertEquals(hex(ch), ('0' + ch.digitToInt()).toString(), normalizeForScan(ch.toString()))
+        }
+    }
+
+    @Test
+    fun `nothing in the BMP folds except digits and FOLDED_SEPARATORS`() {
+        // The other half of the contract with Samples.kt: every adjacency suite
+        // runs over FOLDED_SEPARATORS, so a character folded onto a space or a
+        // dash that is missing from it is a separator nothing tests. That is how
+        // the ideographic space and the soft hyphen shipped as bypasses.
+        val separators = FOLDED_SEPARATORS.toSet()
+        for (ch in '\u0000'..'\uFFFF') {
+            val folded = normalizeForScan(ch.toString())
+            assertEquals(hex(ch), 1, folded.length)
+            when {
+                ch.isDigit() -> continue
+                ch in separators -> assertTrue("${hex(ch)} -> $folded", folded == " " || folded == "-")
+                else -> assertEquals("${hex(ch)} folded but is not in FOLDED_SEPARATORS", ch.toString(), folded)
+            }
+        }
+    }
+
+    @Test
+    fun `no mask glyph folds, so a mask can only ever break a run`() {
+        // cardFloor and the run ceiling both scan text that already holds mask
+        // glyphs. A glyph that folded into a digit, a space or a dash could
+        // stitch two runs into one that neither of them ever measured.
+        for (glyph in MASK_SYMBOLS) {
+            assertEquals("$glyph", glyph.toString(), normalizeForScan(glyph.toString()))
+        }
+    }
+
+    @Test
+    fun `a card is masked in every digit system, across every separator`() {
+        // Each of these came back whole, with nothing in the counts: full-width
+        // digits split by the ideographic space a CJK keyboard types, a soft
+        // hyphen or a word joiner wedged between groups, Persian or Devanagari
+        // digits.
+        for (zero in digitZeros) {
+            for (separator in ALL_SEPARATORS) {
+                val card = write("4111 1111 1111 1111", zero, separator)
+                val result = Redactor.redactAllInText(card, MaskPolicy('*'))
+                val label = "${hex(zero)} / ${hex(separator)}"
+                assertEquals(label, write("**** **** **** 1111", zero, separator), result.output)
+                assertEquals(label, mapOf(SensitiveType.CARD to 1), result.counts)
+            }
+        }
     }
 }

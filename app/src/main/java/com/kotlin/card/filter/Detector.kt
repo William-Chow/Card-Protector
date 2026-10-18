@@ -307,15 +307,31 @@ object Redactor {
      * preserved, and the run is masked outright rather than at the slider
      * position, which keeps this independent of the Reveal control — the run is
      * not the value this type is masking, so the card slider does not govern it.
+     *
+     * Matched on the folded copy of the replacement and spliced into the raw one,
+     * exactly as the detectors are. A replacement is raw text, and the ASCII `\d`
+     * in [CARD_REGEX] cannot see a full-width or Arabic-Indic PAN that a URL host
+     * or an email domain keeps verbatim: `https://４１１１…１１１１.example.com/x`
+     * slipped under this floor and only the run ceiling caught it, ten digits
+     * late. [normalizeForScan] is 1:1, so a match range in the folded copy is the
+     * same range in the replacement. A mask glyph never folds into a digit, a
+     * space or a dash, so the argument above still holds after folding.
      */
     private fun cardFloor(replacement: String, maskChar: Char): Floored {
-        if (replacement.count { it in '0'..'9' } < CARD_RUN_MIN_DIGITS) return Floored(replacement, 0)
+        val scanned = normalizeForScan(replacement)
+        if (scanned.count { it in '0'..'9' } < CARD_RUN_MIN_DIGITS) return Floored(replacement, 0)
         var hidden = 0
-        val masked = CARD_REGEX.replace(replacement) {
+        val masked = StringBuilder(replacement.length)
+        var cursor = 0
+        for (match in CARD_REGEX.findAll(scanned)) {
+            masked.append(replacement, cursor, match.range.first)
+            masked.append(maskNumber(replacement.substring(match.range.first, match.range.last + 1), maskChar, 0, 0))
+            cursor = match.range.last + 1
             hidden++
-            maskNumber(it.value, maskChar, 0, 0)
         }
-        return Floored(masked, hidden)
+        if (hidden == 0) return Floored(replacement, 0)
+        masked.append(replacement, cursor, replacement.length)
+        return Floored(masked.toString(), hidden)
     }
 
     /** How many card numbers the shipped card-only masker would find in [span]. */
