@@ -110,6 +110,7 @@ import com.kotlin.card.filter.MaskPolicy
 import com.kotlin.card.filter.RedactResult
 import com.kotlin.card.filter.Redactor
 import com.kotlin.card.filter.SensitiveType
+import com.kotlin.card.filter.asciiDigits
 import com.kotlin.card.filter.extractFirstCardDigits
 import com.kotlin.card.filter.keepCounts
 import com.kotlin.card.filter.maskNumber
@@ -628,12 +629,10 @@ class MainActivity : ComponentActivity() {
                                 OutlinedTextField(
                                     value = cardNumber,
                                     onValueChange = { value ->
-                                        // Folded to ASCII, so a full-width paste
-                                        // reaches the brand and Luhn checks as
-                                        // the digits it is.
-                                        val onlyDigits = buildString {
-                                            for (ch in value) if (ch.isDigit()) append('0' + ch.digitToInt())
-                                        }
+                                        // Folded to ASCII, so a full-width or
+                                        // mathematical-bold paste reaches the
+                                        // brand and Luhn checks as the digits it is.
+                                        val onlyDigits = asciiDigits(value)
                                         if (onlyDigits.length <= 19) cardNumber = onlyDigits
                                     },
                                     modifier = Modifier.fillMaxWidth(),

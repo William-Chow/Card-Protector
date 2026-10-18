@@ -3,6 +3,7 @@ package com.kotlin.card.filter
 import com.kotlin.card.data.MASK_SYMBOLS
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import kotlin.random.Random
 
@@ -153,6 +154,76 @@ class NormalizeTest {
                 val result = Redactor.redactAllInText(card, MaskPolicy('*'))
                 val label = "${hex(zero)} / ${hex(separator)}"
                 assertEquals(label, write("**** **** **** 1111", zero, separator), result.output)
+                assertEquals(label, mapOf(SensitiveType.CARD to 1), result.counts)
+            }
+        }
+    }
+
+    @Test
+    fun `ScanText collapses a two-Char digit to one scan character and maps it back`() {
+        val bold4 = String(Character.toChars(0x1D7D2))
+        val scanned = ScanText.of("a${bold4}b")
+        assertEquals("a4b", scanned.scan)
+        assertEquals(listOf(0, 1, 3, 4), (0..3).map { scanned.start(it) })
+        assertEquals(3, scanned.end(1))
+    }
+
+    @Test
+    fun `ScanText is the identity when nothing outside the BMP folds`() {
+        val ascii = "card 4111 1111 1111 1111"
+        assertTrue(ScanText.of(ascii).scan === ascii)
+        // An emoji is a surrogate pair too, but not one that folds.
+        val emoji = "ok " + String(Character.toChars(0x1F600)) + " 4111"
+        val scanned = ScanText.of(emoji)
+        assertEquals(emoji, scanned.scan)
+        for (index in 0..emoji.length) assertEquals(index, scanned.start(index))
+    }
+
+    @Test
+    fun `every code point outside the BMP folds by its category, and maps back`() {
+        // The supplementary half of the BMP check above: a digit becomes one
+        // ASCII digit, a dash one '-', a space or an invisible format character
+        // one ' ', and anything else stays as its two Chars, at the right place.
+        val text = buildString { for (codePoint in 0x10000..0x10FFFF) appendCodePoint(codePoint) }
+        val scanned = ScanText.of(text)
+        val scan = scanned.scan
+        var at = 0
+        for (codePoint in 0x10000..0x10FFFF) {
+            val origin = (codePoint - 0x10000) * 2
+            if (scanned.start(at) != origin) fail("U+${codePoint.toString(16)} starts at ${scanned.start(at)}, not $origin")
+            val type = Character.getType(codePoint)
+            val folded = when {
+                Character.isDigit(codePoint) -> '0' + Character.digit(codePoint, 10)
+                type == Character.DASH_PUNCTUATION.toInt() -> '-'
+                type == Character.SPACE_SEPARATOR.toInt() || type == Character.FORMAT.toInt() -> ' '
+                else -> null
+            }
+            if (folded != null) {
+                if (scan[at] != folded) fail("U+${codePoint.toString(16)} folded to ${scan[at]}, not $folded")
+                at += 1
+            } else {
+                if (scan[at] != text[origin] || scan[at + 1] != text[origin + 1]) {
+                    fail("U+${codePoint.toString(16)} changed, but it does not fold")
+                }
+                at += 2
+            }
+        }
+        assertEquals(scan.length, at)
+        assertEquals(text.length, scanned.start(at))
+    }
+
+    @Test
+    fun `a card is masked in every digit system outside the BMP, across every separator`() {
+        // Each of these came back whole, with nothing in the counts: the bold or
+        // monospace digits a "fancy text" generator produces, Osmanya and Adlam
+        // digits, and a tag character wedged between groups of plain ones.
+        val separators = ALL_SEPARATORS.map { it.toString() } + SUPPLEMENTARY_SEPARATORS
+        for (zero in listOf('0'.code) + SUPPLEMENTARY_ZEROS) {
+            for (separator in separators) {
+                val card = inDigits("4111 1111 1111 1111", zero).replace(" ", separator)
+                val result = Redactor.redactAllInText(card, MaskPolicy('*'))
+                val label = "U+%X / %s".format(zero, separator.codePoints().toArray().joinToString { "U+%X".format(it) })
+                assertEquals(label, inDigits("**** **** **** 1111", zero).replace(" ", separator), result.output)
                 assertEquals(label, mapOf(SensitiveType.CARD to 1), result.counts)
             }
         }

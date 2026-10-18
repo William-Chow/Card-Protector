@@ -68,8 +68,57 @@ val SENSITIVE_SAMPLES: List<String> = TYPE_SAMPLES.values + listOf(
 /** How many characters of [text] are the mask glyph [glyph]. */
 fun maskCount(text: String, glyph: Char): Int = text.count { it == glyph }
 
-/** How many digits survived masking. */
-fun digitCount(text: String): Int = text.count { it.isDigit() }
+/**
+ * How many digits survived masking, counted in code points: a mathematical
+ * bold digit is two `Char`s and one digit, and neither half is a digit alone.
+ */
+fun digitCount(text: String): Int {
+    var count = 0
+    var index = 0
+    while (index < text.length) {
+        val codePoint = text.codePointAt(index)
+        if (Character.isDigit(codePoint)) count++
+        index += Character.charCount(codePoint)
+    }
+    return count
+}
+
+/** Whether [text] is valid UTF-16 — no surrogate half without its partner. */
+fun isWellFormed(text: String): Boolean {
+    var index = 0
+    while (index < text.length) {
+        val ch = text[index]
+        when {
+            ch.isHighSurrogate() -> {
+                if (index + 1 >= text.length || !text[index + 1].isLowSurrogate()) return false
+                index += 2
+            }
+            ch.isLowSurrogate() -> return false
+            else -> index++
+        }
+    }
+    return true
+}
+
+/**
+ * The zero of each digit system outside the BMP the tests write numbers in:
+ * the five mathematical alphanumeric digit sets a "fancy text" generator offers
+ * — bold, double-struck, sans-serif, sans-serif bold, monospace — then Osmanya
+ * and Adlam, two scripts with digits of their own.
+ */
+val SUPPLEMENTARY_ZEROS: List<Int> = listOf(0x1D7CE, 0x1D7D8, 0x1D7E2, 0x1D7EC, 0x1D7F6, 0x104A0, 0x1E950)
+
+/**
+ * Invisible format characters outside the BMP: a tag space, the kind used to
+ * smuggle text through a filter, and a musical beam control.
+ */
+val SUPPLEMENTARY_SEPARATORS: List<String> = listOf(0xE0020, 0x1D173).map { String(Character.toChars(it)) }
+
+/** [text] with each ASCII digit written in the digit system whose zero is [zero]. */
+fun inDigits(text: String, zero: Int): String =
+    buildString(text.length * 2) {
+        for (ch in text) if (ch in '0'..'9') appendCodePoint(zero + (ch - '0')) else append(ch)
+    }
 
 /**
  * Every non-ASCII character [normalizeForScan] folds onto `' '` or `'-'`: each

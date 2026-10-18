@@ -3,9 +3,8 @@ package com.kotlin.card.filter
 /**
  * A **card-length run**: the unit the privacy ceiling is defined over.
  *
- * [range] indexes the normalized string — and therefore the original, since
- * [normalizeForScan] is 1:1 — and [digits] is how many of those characters are
- * digits.
+ * [range] indexes the scan string — [ScanText.start] maps it back to the
+ * original — and [digits] is how many of those characters are digits.
  */
 data class DigitRun(val range: IntRange, val digits: Int)
 

@@ -47,24 +47,15 @@ fun clampKeepCounts(digitCount: Int, keepLeading: Int, keepTrailing: Int): Pair<
  * digits. Non-digit characters (spaces, dashes) are preserved as-is. Keep counts
  * are clamped by [clampKeepCounts] first, so over-large ones quietly reveal less
  * rather than the whole number — no error string.
+ *
+ * Walks code points, not `Char`s. A digit outside the BMP — the mathematical
+ * bold `𝟒` — is two `Char`s, neither of them a digit on its own, so a `Char`
+ * walk counted nothing, masked nothing and handed the number back whole. A
+ * masked one becomes a single glyph, so the output can be shorter than the
+ * input; a revealed one is kept whole, never split down the middle.
  */
-fun maskNumber(account: String, maskChar: Char, keepLeading: Int, keepTrailing: Int): String {
-    val digitCount = account.count { it.isDigit() }
-    if (digitCount == 0) return account
-    val (leading, trailing) = clampKeepCounts(digitCount, keepLeading, keepTrailing)
-    val sb = StringBuilder(account.length)
-    var digitIndex = 0
-    for (ch in account) {
-        if (ch.isDigit()) {
-            val revealed = digitIndex < leading || digitIndex >= digitCount - trailing
-            sb.append(if (revealed) ch else maskChar)
-            digitIndex++
-        } else {
-            sb.append(ch)
-        }
-    }
-    return sb.toString()
-}
+fun maskNumber(account: String, maskChar: Char, keepLeading: Int, keepTrailing: Int): String =
+    maskCodePoints(account, maskChar, keepLeading, keepTrailing, Character::isDigit)
 
 /**
  * As [maskNumber], but letters are maskable too.
@@ -74,20 +65,40 @@ fun maskNumber(account: String, maskChar: Char, keepLeading: Int, keepTrailing: 
  * counts still route through [clampKeepCounts], so the same floor applies:
  * at least one alphanumeric always stays hidden.
  */
-fun maskAlnum(value: String, maskChar: Char, keepLeading: Int, keepTrailing: Int): String {
-    val alnumCount = value.count { it.isLetterOrDigit() }
-    if (alnumCount == 0) return value
-    val (leading, trailing) = clampKeepCounts(alnumCount, keepLeading, keepTrailing)
-    val sb = StringBuilder(value.length)
-    var alnumIndex = 0
-    for (ch in value) {
-        if (ch.isLetterOrDigit()) {
-            val revealed = alnumIndex < leading || alnumIndex >= alnumCount - trailing
-            sb.append(if (revealed) ch else maskChar)
-            alnumIndex++
+fun maskAlnum(value: String, maskChar: Char, keepLeading: Int, keepTrailing: Int): String =
+    maskCodePoints(value, maskChar, keepLeading, keepTrailing, Character::isLetterOrDigit)
+
+/** Mask the code points of [text] that are [maskable], keeping the ends asked for. */
+private inline fun maskCodePoints(
+    text: String,
+    maskChar: Char,
+    keepLeading: Int,
+    keepTrailing: Int,
+    maskable: (Int) -> Boolean
+): String {
+    var count = 0
+    var index = 0
+    while (index < text.length) {
+        val codePoint = text.codePointAt(index)
+        if (maskable(codePoint)) count++
+        index += Character.charCount(codePoint)
+    }
+    if (count == 0) return text
+    val (leading, trailing) = clampKeepCounts(count, keepLeading, keepTrailing)
+    val sb = StringBuilder(text.length)
+    var seen = 0
+    index = 0
+    while (index < text.length) {
+        val codePoint = text.codePointAt(index)
+        val width = Character.charCount(codePoint)
+        if (maskable(codePoint)) {
+            val revealed = seen < leading || seen >= count - trailing
+            if (revealed) sb.append(text, index, index + width) else sb.append(maskChar)
+            seen++
         } else {
-            sb.append(ch)
+            sb.append(text, index, index + width)
         }
+        index += width
     }
     return sb.toString()
 }
@@ -121,8 +132,14 @@ fun countCards(text: String): Int = CARD_REGEX.findAll(text).count()
  * which read ASCII, got them wrong.
  */
 fun extractFirstCardDigits(text: String): String {
-    val normalized = normalizeForScan(text)
-    val match = CARD_REGEX.find(normalized)
-    val source = match?.value ?: normalized
+    val scan = ScanText.of(text).scan
+    val match = CARD_REGEX.find(scan)
+    val source = match?.value ?: scan
     return source.filter { it in '0'..'9' }.take(19)
 }
+
+/**
+ * Every decimal digit in [text], in whatever script it was written, as ASCII,
+ * and nothing else. What the single-card field keeps of a keystroke or a paste.
+ */
+fun asciiDigits(text: String): String = ScanText.of(text).scan.filter { it in '0'..'9' }

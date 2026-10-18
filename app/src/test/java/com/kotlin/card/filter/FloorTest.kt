@@ -88,13 +88,14 @@ class FloorTest {
         // The floor used to match the raw replacement with CARD_REGEX's
         // ASCII-only `\d`, so a full-width PAN in a host came back with ten
         // digits showing — stopped by the run ceiling, not by the floor.
-        for (zero in listOf('0', '\uFF10', '\u0660', '\u06F0', '\u0966')) {
-            val pan = "4111111111111111".map { zero + (it - '0') }.joinToString("")
+        for (zero in listOf(0x30, 0xFF10, 0x0660, 0x06F0, 0x0966) + SUPPLEMENTARY_ZEROS) {
+            val pan = inDigits("4111111111111111", zero)
             for (sample in listOf("https://$pan.example.com/x", "a@$pan.com")) {
                 for (glyph in MASK_GLYPHS) {
                     val result = Redactor.redactAllInText(sample, MaskPolicy(glyph))
                     assertEquals("$sample -> ${result.output}", 0, digitCount(result.output))
                     assertTrue("$sample gave ${result.counts}", result.counts.containsKey(SensitiveType.CARD))
+                    assertTrue(result.output, isWellFormed(result.output))
                 }
             }
         }
@@ -127,6 +128,27 @@ class FloorTest {
                     val revealed = output.count { it.isLetterOrDigit() && it != glyph }
                     assertTrue("keep=$leading/$trailing revealed $revealed of $output", revealed <= 6)
                 }
+            }
+        }
+    }
+
+    @Test
+    fun `values written in two-Char digits keep the floors their types promise`() {
+        for (zero in SUPPLEMENTARY_ZEROS) {
+            for (glyph in MASK_GLYPHS) {
+                // An IC reveals nothing, whatever the slider says.
+                val ic = Redactor.redactAllInText(inDigits("901231-14-5678", zero), MaskPolicy(glyph, 0, 10))
+                assertEquals(mapOf(SensitiveType.MY_NRIC to 1), ic.counts)
+                assertEquals(ic.output, 0, digitCount(ic.output))
+                // A phone keeps its +60 whole, and at most three digits after it.
+                val phone = Redactor.redactAllInText(inDigits("+60 12-345 6789", zero), MaskPolicy(glyph, 0, 10))
+                val prefix = inDigits("+60", zero)
+                assertTrue(phone.output, phone.output.startsWith(prefix))
+                assertTrue(phone.output, digitCount(phone.output.removePrefix(prefix)) <= 3)
+                // An email whose local part is a PAN reveals none of it.
+                val email = Redactor.redactAllInText(inDigits("4111111111111111", zero) + "@x.com", MaskPolicy(glyph))
+                assertEquals(email.output, 0, digitCount(email.output))
+                for (output in listOf(ic.output, phone.output, email.output)) assertTrue(output, isWellFormed(output))
             }
         }
     }

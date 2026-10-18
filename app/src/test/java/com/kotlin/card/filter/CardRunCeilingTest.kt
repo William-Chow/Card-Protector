@@ -56,7 +56,7 @@ class CardRunCeilingTest {
      * twenty-eight digit run to the engine and two numbers to the shipped masker.
      */
     private fun census(input: String): Census {
-        val normalized = normalizeForScan(input)
+        val normalized = ScanText.of(input).scan
         var runs = 0
         var digitsInRuns = 0
         for (match in digitRun.findAll(normalized)) {
@@ -292,5 +292,34 @@ class CardRunCeilingTest {
                 !output.contains("41111111111")
             )
         }
+    }
+
+    @Test
+    fun `the ceiling holds in two-Char digits, and the output stays valid UTF-16`() {
+        // Every adjacency pair, rewritten in digits that are two Chars each. The
+        // engine has to see them as one digit apiece to find the runs at all,
+        // and the ceiling has to mask one without splitting it.
+        for (zero in listOf(0x1D7CE, 0x1E950)) {
+            for (separator in listOf(' ', '-')) {
+                for (text in adjacencyPairs(separator)) {
+                    val input = inDigits(text, zero)
+                    for ((leading, trailing) in ALL_KEEP_COUNTS.distinct()) {
+                        val policy = MaskPolicy('*', leading, trailing)
+                        assertCeiling(input, policy, "zero U+%X".format(zero))
+                        val output = Redactor.redactAllInText(input, policy).output
+                        assertTrue("${visible(input)} -> ${visible(output)}", isWellFormed(output))
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `masking a two-Char digit at the ceiling drops its second half`() {
+        // Three phone digits plus ten card digits is thirteen, three over: the
+        // ceiling masks the phone's, each a two-Char digit turned into one glyph.
+        val bold = { text: String -> inDigits(text, 0x1D7CE) }
+        val output = Redactor.redactAllInText(bold("012-3456789 4111 1111 1111 1111"), MaskPolicy('*', 0, 10)).output
+        assertTrue(output == "***-******* **** **" + bold("11 1111 1111"))
     }
 }

@@ -158,4 +158,20 @@ class MaskingTest {
         assertEquals("4111111111111111", extractFirstCardDigits("Kad: $fullWidth"))
         assertEquals("4111111111111111", extractFirstCardDigits("\u06F4" + "\u06F1".repeat(15)))
     }
+
+    @Test
+    fun `maskNumber and maskAlnum count and mask a two-Char digit as one`() {
+        val bold = { text: String -> inDigits(text, 0x1D7CE) }
+        assertEquals("**** **" + bold("11"), maskNumber(bold("4111 1111"), '*', 0, 2))
+        assertEquals(bold("41") + "** ****", maskNumber(bold("4111 1111"), '*', 2, 0))
+        // At least one digit stays hidden however short the number is.
+        assertEquals("*", maskNumber(bold("7"), '*', 0, 4))
+        assertEquals("GB***" + bold("1234"), maskAlnum("GB" + bold("99") + "X" + bold("1234"), '*', 2, 4))
+    }
+
+    @Test
+    fun `the single-card helpers hand back ASCII from two-Char digits`() {
+        assertEquals("4111111111111111", extractFirstCardDigits("Kad: " + inDigits("4111 1111 1111 1111", 0x1D7CE)))
+        assertEquals("4111111111111111", asciiDigits(inDigits("4111-1111-1111-1111", 0x1D7F6)))
+    }
 }

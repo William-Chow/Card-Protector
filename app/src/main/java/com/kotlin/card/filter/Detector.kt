@@ -18,8 +18,9 @@ import com.kotlin.card.filter.detect.UrlDetector
  *
  * [keepPrefix] is how many leading characters of the span survive verbatim: the
  * brand marker of an API key (`sk-`, `AKIA`), or the `+60` of a Malaysian number
- * written in international form. It is a count of characters in the *original*
- * substring, not of revealed digits.
+ * written in international form. It is a count of characters, not of revealed
+ * digits: a detector sets it in scan characters, and [Redactor] converts it to
+ * characters of the original substring before calling [Detector.redact].
  */
 data class Candidate(val range: IntRange, val keepPrefix: Int = 0)
 
@@ -75,8 +76,10 @@ data class RedactResult(val output: String, val counts: Map<SensitiveType, Int>)
  *
  * Five phases, and the separation between them is deliberate:
  *
- * 1. **Normalize** ([normalizeForScan]) — strictly 1:1, so every index into the
- *    scanned string is also an index into the original.
+ * 1. **Normalize** ([ScanText]) — every index the later phases use is a scan
+ *    index, and [ScanText.start] turns it into one in the original. For text
+ *    without a two-`Char` digit, dash, space or format character that is the
+ *    identity.
  * 2. **Detect** — every detector runs over the whole normalized string. None of
  *    them ever sees partially masked output, which matters because `#`, `$` and
  *    `!` are all selectable mask glyphs and re-scanning masked text would let
@@ -160,8 +163,9 @@ object Redactor {
     /**
      * One piece of the assembled output, and where it came from.
      *
-     * Verbatim segments are 1:1 with the input, so index arithmetic across them
-     * is exact. A claim segment maps its whole input span onto its whole
+     * The `in` indices are scan indices. A verbatim segment is a straight copy
+     * of the original, so an index inside it maps to the output through
+     * [ScanText.start]. A claim segment maps its whole input span onto its whole
      * replacement, because a replacement is free to change length.
      */
     private class Segment(
@@ -182,17 +186,22 @@ object Redactor {
      * secret rules. Scrubbing to it is therefore the honest picture of what the
      * text will look like once the claim is masked: a boundary, not a bridge.
      *
-     * Substituting in place keeps the string 1:1 with [normalizeForScan]'s
-     * output, so a re-scan still yields indices that mean the same thing in the
-     * original text, and a lookbehind still sees real context on the side that
-     * was never claimed.
+     * Substituting in place keeps the string the same length as the scan, so a
+     * re-scan still yields scan indices that mean the same thing as the first
+     * pass's, and a lookbehind still sees real context on the side that was
+     * never claimed.
      */
     private const val SCRUBBED = '\n'
 
     /** Mask every sensitive value in [text], leaving the rest byte-for-byte alone. */
     fun redactAllInText(text: String, policy: MaskPolicy): RedactResult {
         if (text.isEmpty()) return RedactResult(text, emptyMap())
-        val normalized = normalizeForScan(text)
+        // Every index below is a scan index. `scanned.start` / `scanned.end` turn
+        // one into a position in [text]; for almost every input they are the
+        // identity, and they only differ around a folded code point outside the
+        // BMP, which is one scan character standing in for two of the original.
+        val scanned = ScanText.of(text)
+        val normalized = scanned.scan
         val claimed = BooleanArray(normalized.length)
         var claimedCells = 0
         val claims = ArrayList<Claim>()
@@ -217,8 +226,15 @@ object Redactor {
                         if (free > 0) residual = true
                         continue
                     }
-                    val original = text.substring(range.first, range.last + 1)
-                    val raw = detector.redact(original, candidate.copy(range = range), policy) ?: continue
+                    val first = scanned.start(range.first)
+                    val original = text.substring(first, scanned.end(range.last))
+                    // keepPrefix arrives in scan characters and leaves in original
+                    // ones, so a kept `+60` written in two-Char digits is kept whole.
+                    val keep = if (candidate.keepPrefix == 0) 0 else {
+                        scanned.start(minOf(range.first + candidate.keepPrefix, range.last + 1)) - first
+                    }
+                    val raw = detector.redact(original, candidate.copy(range = range, keepPrefix = keep), policy)
+                        ?: continue
                     val floored = cardFloor(raw, policy.maskChar)
                     val cards = if (detector.type == SensitiveType.CARD) {
                         cardNumbersIn(normalized.substring(range.first, range.last + 1))
@@ -238,7 +254,7 @@ object Redactor {
             }
         }
         val runs = cardLengthRuns(normalized)
-        sweepCardRuns(text, normalized, runs, claimed, claims, policy.maskChar)
+        sweepCardRuns(text, scanned, runs, claimed, claims, policy.maskChar)
         if (claims.isEmpty()) return RedactResult(text, emptyMap())
 
         claims.sortBy { it.range.first }
@@ -251,21 +267,23 @@ object Redactor {
             segments += Segment(inFirst, inLast, out.length, out.length + length - 1, verbatim)
         }
 
+        /** Copy the scan span from [first] to before [until] verbatim from [text]. */
+        fun copy(first: Int, until: Int) {
+            val from = scanned.start(first)
+            val to = scanned.start(until)
+            mark(first, until - 1, to - from, verbatim = true)
+            out.append(text, from, to)
+        }
+
         for (claim in claims) {
-            if (cursor < claim.range.first) {
-                mark(cursor, claim.range.first - 1, claim.range.first - cursor, verbatim = true)
-                out.append(text, cursor, claim.range.first)
-            }
+            if (cursor < claim.range.first) copy(cursor, claim.range.first)
             mark(claim.range.first, claim.range.last, claim.replacement.length, verbatim = false)
             out.append(claim.replacement)
             cursor = claim.range.last + 1
         }
-        if (cursor < text.length) {
-            mark(cursor, text.length - 1, text.length - cursor, verbatim = true)
-            out.append(text, cursor, text.length)
-        }
+        if (cursor < normalized.length) copy(cursor, normalized.length)
 
-        val output = enforceRunCeiling(out.toString(), normalized, runs, segments, policy.maskChar)
+        val output = enforceRunCeiling(out.toString(), scanned, runs, segments, policy.maskChar)
 
         val counts = LinkedHashMap<SensitiveType, Int>()
         for (type in types) {
@@ -303,30 +321,33 @@ object Redactor {
      *
      * Safe to run on a replacement even though replacements are partly masked
      * already: no glyph the picker offers is a digit, a space or a dash, so a
-     * mask glyph can only ever *break* a run, never join one. Length is
-     * preserved, and the run is masked outright rather than at the slider
-     * position, which keeps this independent of the Reveal control — the run is
-     * not the value this type is masking, so the card slider does not govern it.
+     * mask glyph can only ever *break* a run, never join one. The run is masked
+     * outright rather than at the slider position, which keeps this independent
+     * of the Reveal control — the run is not the value this type is masking, so
+     * the card slider does not govern it.
      *
      * Matched on the folded copy of the replacement and spliced into the raw one,
      * exactly as the detectors are. A replacement is raw text, and the ASCII `\d`
      * in [CARD_REGEX] cannot see a full-width or Arabic-Indic PAN that a URL host
      * or an email domain keeps verbatim: `https://４１１１…１１１１.example.com/x`
      * slipped under this floor and only the run ceiling caught it, ten digits
-     * late. [normalizeForScan] is 1:1, so a match range in the folded copy is the
-     * same range in the replacement. A mask glyph never folds into a digit, a
-     * space or a dash, so the argument above still holds after folding.
+     * late. [ScanText] maps each match back to the replacement, and a mask glyph
+     * never folds into a digit, a space or a dash, so the argument above still
+     * holds after folding.
      */
     private fun cardFloor(replacement: String, maskChar: Char): Floored {
-        val scanned = normalizeForScan(replacement)
-        if (scanned.count { it in '0'..'9' } < CARD_RUN_MIN_DIGITS) return Floored(replacement, 0)
+        val scanned = ScanText.of(replacement)
+        val scan = scanned.scan
+        if (scan.count { it in '0'..'9' } < CARD_RUN_MIN_DIGITS) return Floored(replacement, 0)
         var hidden = 0
         val masked = StringBuilder(replacement.length)
         var cursor = 0
-        for (match in CARD_REGEX.findAll(scanned)) {
-            masked.append(replacement, cursor, match.range.first)
-            masked.append(maskNumber(replacement.substring(match.range.first, match.range.last + 1), maskChar, 0, 0))
-            cursor = match.range.last + 1
+        for (match in CARD_REGEX.findAll(scan)) {
+            val first = scanned.start(match.range.first)
+            val end = scanned.end(match.range.last)
+            masked.append(replacement, cursor, first)
+            masked.append(maskNumber(replacement.substring(first, end), maskChar, 0, 0))
+            cursor = end
             hidden++
         }
         if (hidden == 0) return Floored(replacement, 0)
@@ -366,7 +387,7 @@ object Redactor {
      */
     private fun sweepCardRuns(
         text: String,
-        normalized: String,
+        scanned: ScanText,
         runs: List<DigitRun>,
         claimed: BooleanArray,
         claims: MutableList<Claim>,
@@ -375,6 +396,7 @@ object Redactor {
         // rather than a promise in the paragraph above.
         maskChar: Char
     ) {
+        val normalized = scanned.scan
         for (run in runs) {
             var index = run.range.first
             while (index <= run.range.last) {
@@ -389,7 +411,7 @@ object Redactor {
                 while (first <= last && normalized[first] !in '0'..'9') first++
                 while (last >= first && normalized[last] !in '0'..'9') last--
                 if (first <= last) {
-                    val original = text.substring(first, last + 1)
+                    val original = text.substring(scanned.start(first), scanned.end(last))
                     val replacement = maskNumber(original, maskChar, keepLeading = 0, keepTrailing = 0)
                     for (i in first..last) claimed[i] = true
                     claims += Claim(first..last, SensitiveType.CARD, replacement, cards = 1)
@@ -417,19 +439,35 @@ object Redactor {
      * masked only as a last resort: they are the ones most likely to belong to
      * the neighbouring value rather than to this run.
      *
-     * Nothing here is length-changing, so the output stays aligned with itself,
-     * and no mask glyph the picker offers is a digit, so masking can only ever
-     * reduce the count it is measuring.
+     * Digits are counted and masked as code points, and masking is done in place
+     * so every output index stays valid until the end. The one exception is a
+     * digit outside the BMP: it is two `Char`s and its mask glyph is one, so the
+     * glyph takes the first slot and the second is dropped only after the last
+     * index has been used. No mask glyph the picker offers is a digit, so masking
+     * can only ever reduce the count it is measuring.
      */
     private fun enforceRunCeiling(
         assembled: String,
-        normalized: String,
+        scanned: ScanText,
         runs: List<DigitRun>,
         segments: List<Segment>,
         maskChar: Char
     ): String {
         if (runs.isEmpty()) return assembled
+        val normalized = scanned.scan
         val chars = assembled.toCharArray()
+        var dropped: BooleanArray? = null
+
+        fun digitAt(index: Int): Boolean = Character.isDigit(Character.codePointAt(chars, index))
+
+        fun mask(index: Int) {
+            if (chars[index].isHighSurrogate() && index + 1 < chars.size && chars[index + 1].isLowSurrogate()) {
+                val drop = dropped ?: BooleanArray(chars.size).also { dropped = it }
+                drop[index + 1] = true
+            }
+            chars[index] = maskChar
+        }
+
         // Where each replacement's surviving digits sit in the output, computed
         // once. A single claim can contain several runs — a PEM block, a long
         // URL — and re-deriving this per run would make the pass quadratic in
@@ -438,7 +476,7 @@ object Redactor {
         for (index in segments.indices) {
             val segment = segments[index]
             if (segment.verbatim) continue
-            claimDigits[index] = (segment.outFirst..segment.outLast).filter { chars[it].isDigit() }
+            claimDigits[index] = (segment.outFirst..segment.outLast).filter { digitAt(it) }
         }
         // Runs and segments are both sorted by input position and runs do not
         // overlap, so one forward pointer covers every run without rescanning.
@@ -458,15 +496,15 @@ object Redactor {
                     val first = maxOf(segment.inFirst, run.range.first)
                     val last = minOf(segment.inLast, run.range.last)
                     for (index in first..last) {
-                        val out = segment.outFirst + (index - segment.inFirst)
-                        if (chars[out].isDigit()) inRun += out
+                        val out = segment.outFirst + (scanned.start(index) - scanned.start(segment.inFirst))
+                        if (digitAt(out)) inRun += out
                     }
                     continue
                 }
                 // Re-checked rather than trusted: a claim that straddles two runs
                 // is visited twice, and the first visit may already have masked
                 // some of these positions.
-                val digits = claimDigits[at].orEmpty().filter { chars[it].isDigit() }
+                val digits = claimDigits[at].orEmpty().filter { digitAt(it) }
                 if (digits.isEmpty()) continue
                 if (segment.inFirst >= run.range.first && segment.inLast <= run.range.last) {
                     inRun += digits
@@ -483,16 +521,19 @@ object Redactor {
             if (excess <= 0) continue
             for (index in inRun) {
                 if (excess == 0) break
-                chars[index] = maskChar
+                mask(index)
                 excess--
             }
             for (index in straddling) {
                 if (excess == 0) break
-                chars[index] = maskChar
+                mask(index)
                 excess--
             }
         }
-        return String(chars)
+        val drop = dropped ?: return String(chars)
+        val out = StringBuilder(chars.size)
+        for (index in chars.indices) if (!drop[index]) out.append(chars[index])
+        return out.toString()
     }
 
     /** [normalized] with every claimed index replaced by [SCRUBBED], length unchanged. */

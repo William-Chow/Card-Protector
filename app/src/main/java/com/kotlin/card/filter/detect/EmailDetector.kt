@@ -50,10 +50,13 @@ object EmailDetector : Detector {
         val at = original.lastIndexOf('@')
         if (at <= 0) return original
         val local = original.substring(0, at)
-        val (clamped, _) = clampKeepCounts(local.length, keepLeading = 1, keepTrailing = 0)
-        val leading = if (local.first().isDigit()) 0 else clamped
-        return local.take(leading) +
-            policy.maskChar.toString().repeat(local.length - leading) +
+        // Counted in code points: a local part can open with a two-`Char` digit
+        // like `𝟒`, and revealing one `Char` of it would be half a character.
+        val points = local.codePointCount(0, local.length)
+        val (clamped, _) = clampKeepCounts(points, keepLeading = 1, keepTrailing = 0)
+        val leading = if (Character.isDigit(local.codePointAt(0))) 0 else clamped
+        return local.substring(0, local.offsetByCodePoints(0, leading)) +
+            policy.maskChar.toString().repeat(points - leading) +
             original.substring(at)
     }
 }
