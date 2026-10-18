@@ -84,6 +84,10 @@
     <string name="theme_dark">Gelap</string>
     <string name="privacy_options">Pilihan privasi</string>
 
+    <!-- ── Kemas kini dalam apl ────────────────────────────────────────────── -->
+    <string name="update_downloaded">Kemas kini baru sahaja dimuat turun.</string>
+    <string name="update_restart">Mula semula</string>
+
     <!-- ── Helaian PROCESS_TEXT ────────────────────────────────────────────── -->
     <string name="sheet_title_oversized">Card Pro · pilihan terlalu besar</string>
     <string name="sheet_title_found">Card Pro · %1$s dijumpai</string>
@@ -96,6 +100,7 @@
     <string name="note_replace_warning">Ganti akan mengubah teks dalam apl itu. Tindakan ini tidak boleh dibatalkan.</string>
     <string name="note_nothing">Tiada apa-apa untuk ditopeng, jadi tiada apa-apa untuk diganti.</string>
     <string name="clip_label_redacted">Teks bertopeng</string>
+    <string name="sheet_dismiss">Tutup</string>
 
     <!-- ── Ringkasan "n dijumpai" ──────────────────────────────────────────── -->
     <!-- Malay does not inflect for number, so each of these carries only the

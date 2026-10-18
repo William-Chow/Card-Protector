@@ -8,6 +8,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,7 +91,8 @@ class RedactActivity : ComponentActivity() {
                 RedactSheet(
                     decision = decision,
                     onReplace = ::replaceSelection,
-                    onCopy = { copyToClipboard(it) }
+                    onCopy = { copyToClipboard(it) },
+                    onDismiss = ::finish
                 )
             }
         }
@@ -115,7 +120,8 @@ class RedactActivity : ComponentActivity() {
 private fun RedactSheet(
     decision: RedactDecision,
     onReplace: (String) -> Unit,
-    onCopy: (String) -> Unit
+    onCopy: (String) -> Unit,
+    onDismiss: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
@@ -127,12 +133,32 @@ private fun RedactSheet(
     val tooLongToReplace = decision.tooLongToReplace
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.45f)),
+        modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.BottomCenter
     ) {
-        ElevatedCard(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+        // The scrim is a sibling of the card rather than its parent, so a tap
+        // on the card never reaches it. Tapping outside a sheet is how every
+        // other sheet on the platform closes, and closing is always safe here:
+        // nothing has been handed back to the host app yet.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClickLabel = stringResource(R.string.sheet_dismiss),
+                    onClick = onDismiss
+                )
+        )
+        // targetSdk 35+ draws this window edge to edge, so without the inset the
+        // bottom of the card sits under the navigation bar.
+        ElevatedCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(12.dp)
+        ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = when {

@@ -153,6 +153,9 @@ private const val SCAN_DEBOUNCE_MS = 120L
 /** The "nothing scanned yet" result, so the async path has something to show. */
 private val EMPTY_RESULT = RedactResult("", emptyMap())
 
+/** A background scan, and the input it was computed from. */
+private class BatchScan(val text: String, val policy: MaskPolicy, val result: RedactResult)
+
 // Enums go into saved state as ordinals rather than through the autoSaver's
 // Serializable path, which would put a whole class name in the Bundle.
 private val ScreenModeSaver =
@@ -432,21 +435,32 @@ class MainActivity : ComponentActivity() {
         val syncBatch = remember(batchText, policy) {
             if (batchText.length <= SYNC_SCAN_LIMIT) Redactor.redactAllInText(batchText, policy) else null
         }
-        var asyncBatch by remember { mutableStateOf(EMPTY_RESULT) }
+        var asyncBatch by remember { mutableStateOf<BatchScan?>(null) }
         LaunchedEffect(batchText, policy) {
             if (syncBatch != null) return@LaunchedEffect
+            val text = batchText
+            val scanPolicy = policy
             delay(SCAN_DEBOUNCE_MS)
-            asyncBatch = withContext(Dispatchers.Default) { Redactor.redactAllInText(batchText, policy) }
+            val result = withContext(Dispatchers.Default) { Redactor.redactAllInText(text, scanPolicy) }
+            asyncBatch = BatchScan(text, scanPolicy, result)
         }
-        val batchResult = syncBatch ?: asyncBatch
+        // Until the background scan catches up, the last one is the masked form
+        // of text the user has since changed: a paragraph they just deleted, or
+        // a different paste altogether. It stays on screen so a long paste does
+        // not flicker on every keystroke, but Copy, Share and the CTA wait for
+        // the scan that matches the field.
+        val currentAsync = asyncBatch?.takeIf { it.text == batchText && it.policy == policy }?.result
+        val batchPending = syncBatch == null && currentAsync == null
+        val batchResult = syncBatch ?: currentAsync ?: asyncBatch?.result ?: EMPTY_RESULT
         val batchMasked = batchResult.output
         val batchSummary = summarizeCounts(batchResult.counts, typeLabel)
         val batchFound = batchResult.counts.isNotEmpty()
+        val batchReady = batchFound && !batchPending
 
         val hasInput = cardNumber.isNotEmpty()
         val brand = CardTools.detectBrand(cardNumber)
         val luhnOk = hasInput && CardTools.isLuhnValid(cardNumber)
-        val canCommit = if (screenMode == ScreenMode.Single) hasInput else batchFound
+        val canCommit = if (screenMode == ScreenMode.Single) hasInput else batchReady
 
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -614,7 +628,12 @@ class MainActivity : ComponentActivity() {
                                 OutlinedTextField(
                                     value = cardNumber,
                                     onValueChange = { value ->
-                                        val onlyDigits = value.filter { it.isDigit() }
+                                        // Folded to ASCII, so a full-width paste
+                                        // reaches the brand and Luhn checks as
+                                        // the digits it is.
+                                        val onlyDigits = buildString {
+                                            for (ch in value) if (ch.isDigit()) append('0' + ch.digitToInt())
+                                        }
                                         if (onlyDigits.length <= 19) cardNumber = onlyDigits
                                     },
                                     modifier = Modifier.fillMaxWidth(),
@@ -699,7 +718,7 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     Button(
                                         modifier = Modifier.weight(2f),
-                                        enabled = batchFound,
+                                        enabled = batchReady,
                                         contentPadding = PaddingValues(horizontal = 4.dp),
                                         onClick = {
                                             clipboard.setText(AnnotatedString(batchMasked))
@@ -712,7 +731,7 @@ class MainActivity : ComponentActivity() {
 
                                     OutlinedButton(
                                         modifier = Modifier.weight(1f),
-                                        enabled = batchFound,
+                                        enabled = batchReady,
                                         contentPadding = PaddingValues(horizontal = 4.dp),
                                         onClick = {
                                             val send = Intent(Intent.ACTION_SEND).apply {

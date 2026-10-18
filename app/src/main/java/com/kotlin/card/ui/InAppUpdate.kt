@@ -15,6 +15,7 @@ import com.google.android.play.core.install.InstallStateUpdatedListener
 import com.google.android.play.core.install.model.AppUpdateType
 import com.google.android.play.core.install.model.InstallStatus
 import com.google.android.play.core.install.model.UpdateAvailability
+import com.kotlin.card.R
 
 class InAppUpdate(
     private val activity: Activity,
@@ -101,7 +102,7 @@ class InAppUpdate(
     fun onActivityResult(resultCode: Int) {
         if (resultCode != android.app.Activity.RESULT_OK) {
             // If the update is canceled or fails, you can request to start the update again.
-            Log.e("ERROR", "Update flow failed! Result code: $resultCode")
+            Log.e("InAppUpdate", "Update flow failed! Result code: $resultCode")
             onUpdateFlowFailed(resultCode)
         }
     }
@@ -111,10 +112,10 @@ class InAppUpdate(
 
         Snackbar.make(
             anchorView,
-            "An update has just been downloaded.",
+            activity.getString(R.string.update_downloaded),
             Snackbar.LENGTH_INDEFINITE
         ).apply {
-            setAction("RESTART") { appUpdateManager.completeUpdate() }
+            setAction(activity.getString(R.string.update_restart)) { appUpdateManager.completeUpdate() }
             setActionTextColor(Color.WHITE)
             show()
         }

@@ -148,4 +148,14 @@ class MaskingTest {
         assertEquals("4111111111111111", extractFirstCardDigits("card: 4111-1111-1111-1111!"))
         assertEquals("1234567890123456789", extractFirstCardDigits("1234567890123456789012"))
     }
+
+    @Test
+    fun `extractFirstCardDigits hands back ASCII whatever the share was written in`() {
+        // Full-width digits split by ideographic spaces: one card to the
+        // redactor, so the share lands in Single mode with this as its prefill.
+        val fullWidth = "\uFF14\uFF11\uFF11\uFF11\u3000" + "\uFF11\uFF11\uFF11\uFF11\u3000".repeat(2) +
+            "\uFF11\uFF11\uFF11\uFF11"
+        assertEquals("4111111111111111", extractFirstCardDigits("Kad: $fullWidth"))
+        assertEquals("4111111111111111", extractFirstCardDigits("\u06F4" + "\u06F1".repeat(15)))
+    }
 }

@@ -110,9 +110,19 @@ fun maskAllInText(text: String, maskChar: Char, keepLeading: Int, keepTrailing: 
 /** How many card-number-like runs are in [text]. */
 fun countCards(text: String): Int = CARD_REGEX.findAll(text).count()
 
-/** Pull the digits of the first card-like run (for prefilling from a share). */
+/**
+ * Pull the digits of the first card-like run (for prefilling from a share), as
+ * ASCII.
+ *
+ * Scanned folded, the way the redactor scans, because the redactor is what
+ * decides a share holds exactly one card: a full-width number split by
+ * ideographic spaces counts as one card there and matched nothing here, so the
+ * prefill fell back to the raw full-width digits and the brand and Luhn checks,
+ * which read ASCII, got them wrong.
+ */
 fun extractFirstCardDigits(text: String): String {
-    val match = CARD_REGEX.find(text)
-    val source = match?.value ?: text
-    return source.filter { it.isDigit() }.take(19)
+    val normalized = normalizeForScan(text)
+    val match = CARD_REGEX.find(normalized)
+    val source = match?.value ?: normalized
+    return source.filter { it in '0'..'9' }.take(19)
 }
