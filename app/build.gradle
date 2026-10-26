@@ -29,12 +29,9 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    /*
-    storeFile=app/keystore/keystore.jks
-    storePassword=android
-    keyAlias=android
-    keyPassword=android
-     */
+    // Release signing reads storeFile, storePassword, keyAlias and keyPassword
+    // from key.properties at the project root. That file and the keystore are
+    // gitignored and never committed.
     signingConfigs {
         release {
             if (keystorePropertiesFile.exists()) {
