@@ -3,6 +3,7 @@ package com.kotlin.card.filter.detect
 import com.kotlin.card.filter.Candidate
 import com.kotlin.card.filter.Detector
 import com.kotlin.card.filter.MaskPolicy
+import com.kotlin.card.filter.ScanText
 import com.kotlin.card.filter.SensitiveType
 
 /**
@@ -62,56 +63,83 @@ object UrlDetector : Detector {
      * would inflate the "links found" count and mangle the text for no gain.
      * Credentials in the authority are the one exception: those are masked, and
      * a URL that has them is never released.
+     *
+     * Parsed on the folded copy and copied out of the raw one. A link typed on a
+     * CJK keyboard, `ｈｔｔｐｓ：／／ｅｘａｍｐｌｅ．ｃｏｍ／ａｃｃｏｕｎｔ`, has no
+     * ASCII `/` for a raw search to find, so the whole path would read as part
+     * of the host and stay in the clear. Every piece that survives — scheme,
+     * host, the separators, a query key — is copied in the characters the user
+     * wrote; only the masked pieces are new.
      */
     override fun redact(original: String, candidate: Candidate, policy: MaskPolicy): String? {
         val hidden = policy.maskChar.toString().repeat(SEGMENT_WIDTH)
+        val scanned = ScanText.of(original)
+        val s = scanned.scan
 
-        val schemeEnd = original.indexOf("://").let { if (it >= 0) it + 3 else 0 }
-        var authorityEnd = original.length
-        for (index in schemeEnd until original.length) {
-            val ch = original[index]
+        /** The raw text behind the scan span from [from] to before [until]. */
+        fun raw(from: Int, until: Int): String = original.substring(scanned.start(from), scanned.start(until))
+
+        val schemeEnd = s.indexOf("://").let { if (it >= 0) it + 3 else 0 }
+        var authorityEnd = s.length
+        for (index in schemeEnd until s.length) {
+            val ch = s[index]
             if (ch == '/' || ch == '?' || ch == '#') {
                 authorityEnd = index
                 break
             }
         }
-        val scheme = original.substring(0, schemeEnd)
-        val authority = original.substring(schemeEnd, authorityEnd)
-        val rest = original.substring(authorityEnd)
+        val fragmentStart = s.indexOf('#', authorityEnd).let { if (it >= 0) it else s.length }
+        val queryStart = s.indexOf('?', authorityEnd).let { if (it in 0 until fragmentStart) it else fragmentStart }
+        val hasQuery = queryStart < fragmentStart
+        val hasFragment = fragmentStart < s.length
 
-        val fragmentStart = rest.indexOf('#')
-        val fragment = if (fragmentStart >= 0) rest.substring(fragmentStart + 1) else null
-        val beforeFragment = if (fragmentStart >= 0) rest.substring(0, fragmentStart) else rest
-        val queryStart = beforeFragment.indexOf('?')
-        val query = if (queryStart >= 0) beforeFragment.substring(queryStart + 1) else null
-        val path = if (queryStart >= 0) beforeFragment.substring(0, queryStart) else beforeFragment
-
-        val userInfoEnd = authority.lastIndexOf('@')
+        val userInfoEnd = s.lastIndexOf('@', authorityEnd - 1).let { if (it >= schemeEnd) it else -1 }
         val hasUserInfo = userInfoEnd >= 0
+        val path = s.substring(authorityEnd, queryStart)
         val hasPath = path.isNotEmpty() && path != "/"
-        if (!hasPath && query.isNullOrEmpty() && fragment.isNullOrEmpty() && !hasUserInfo) return null
+        val queryEmpty = !hasQuery || queryStart + 1 == fragmentStart
+        val fragmentEmpty = !hasFragment || fragmentStart + 1 == s.length
+        if (!hasPath && queryEmpty && fragmentEmpty && !hasUserInfo) return null
 
         return buildString {
-            append(scheme)
+            append(raw(0, schemeEnd))
             // Keep the '@' so the reader can see credentials were there at all.
             if (hasUserInfo) append(hidden)
-            append(authority.substring(userInfoEnd.coerceAtLeast(0)))
-            append(path.split('/').joinToString("/") { if (it.isEmpty()) it else hidden })
-            if (query != null) {
-                append('?')
-                append(query.split('&').joinToString("&") { pair -> maskQueryPair(pair, hidden) })
+            append(raw(if (hasUserInfo) userInfoEnd else schemeEnd, authorityEnd))
+
+            // Path: every '/' as written, every segment between them collapsed.
+            var inSegment = false
+            for (index in authorityEnd until queryStart) {
+                if (s[index] == '/') {
+                    append(raw(index, index + 1))
+                    inSegment = false
+                } else if (!inSegment) {
+                    append(hidden)
+                    inSegment = true
+                }
             }
-            if (fragment != null) {
-                append('#')
-                if (fragment.isNotEmpty()) append(hidden)
+
+            // Query: keys survive, so the reader can tell what was removed.
+            // `usp=sharing` becomes `usp=****`; a bare value with no key goes.
+            if (hasQuery) {
+                append(raw(queryStart, queryStart + 1))
+                var pairStart = queryStart + 1
+                while (pairStart <= fragmentStart) {
+                    var pairEnd = pairStart
+                    while (pairEnd < fragmentStart && s[pairEnd] != '&') pairEnd++
+                    if (pairEnd > pairStart) {
+                        val equals = s.indexOf('=', pairStart).let { if (it in pairStart until pairEnd) it else -1 }
+                        if (equals < 0) append(hidden) else append(raw(pairStart, equals + 1)).append(hidden)
+                    }
+                    if (pairEnd < fragmentStart) append(raw(pairEnd, pairEnd + 1))
+                    pairStart = pairEnd + 1
+                }
+            }
+
+            if (hasFragment) {
+                append(raw(fragmentStart, fragmentStart + 1))
+                if (!fragmentEmpty) append(hidden)
             }
         }
     }
-}
-
-/** `usp=sharing` becomes `usp=****`; a bare value with no key goes entirely. */
-private fun maskQueryPair(pair: String, hidden: String): String {
-    if (pair.isEmpty()) return pair
-    val equals = pair.indexOf('=')
-    return if (equals < 0) hidden else pair.substring(0, equals + 1) + hidden
 }

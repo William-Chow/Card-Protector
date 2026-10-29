@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import java.text.Normalizer
 import kotlin.random.Random
 
 /**
@@ -52,6 +53,17 @@ class NormalizeTest {
         }
 
     private fun hex(ch: Char): String = "U+%04X".format(ch.code)
+
+    /**
+     * The ASCII character Unicode's compatibility mapping says [codePoint] is a
+     * styled copy of, within the blocks the scanner folds, or `null`. Written out
+     * here rather than read from the production table, so the two can disagree.
+     */
+    private fun compatForm(codePoint: Int): Char? {
+        if (COMPAT_BLOCKS.none { codePoint in it }) return null
+        val form = Normalizer.normalize(String(Character.toChars(codePoint)), Normalizer.Form.NFKC)
+        return if (form.length == 1 && form[0] in '!'..'~') form[0] else null
+    }
 
     @Test
     fun `length is preserved for every mapped code point`() {
@@ -127,6 +139,13 @@ class NormalizeTest {
             when {
                 ch.isDigit() -> continue
                 ch in separators -> assertTrue("${hex(ch)} -> $folded", folded == " " || folded == "-")
+                compatForm(ch.code) != null -> {
+                    // A styled or full-width copy of ASCII folds to that ASCII
+                    // character, and never onto a separator FOLDED_SEPARATORS lacks.
+                    val compat = compatForm(ch.code)!!
+                    assertEquals("${hex(ch)} should fold to its NFKC form", compat.toString(), folded)
+                    assertTrue("${hex(ch)} folds onto a separator", compat != ' ' && compat != '-')
+                }
                 else -> assertEquals("${hex(ch)} folded but is not in FOLDED_SEPARATORS", ch.toString(), folded)
             }
         }
@@ -196,7 +215,7 @@ class NormalizeTest {
                 Character.isDigit(codePoint) -> '0' + Character.digit(codePoint, 10)
                 type == Character.DASH_PUNCTUATION.toInt() -> '-'
                 type == Character.SPACE_SEPARATOR.toInt() || type == Character.FORMAT.toInt() -> ' '
-                else -> null
+                else -> compatForm(codePoint)
             }
             if (folded != null) {
                 if (scan[at] != folded) fail("U+${codePoint.toString(16)} folded to ${scan[at]}, not $folded")

@@ -3,6 +3,7 @@ package com.kotlin.card.filter.detect
 import com.kotlin.card.filter.Candidate
 import com.kotlin.card.filter.Detector
 import com.kotlin.card.filter.MaskPolicy
+import com.kotlin.card.filter.ScanText
 import com.kotlin.card.filter.SensitiveType
 import com.kotlin.card.filter.ipv4Enumerated
 import com.kotlin.card.filter.ipv4Public
@@ -48,10 +49,19 @@ object Ipv4Detector : Detector {
      * Keeps the first octet — enough to place the network without identifying
      * the host — and collapses the rest to a fixed three glyphs each, so the
      * output does not leak how many digits each octet had.
+     *
+     * The first dot is found on the folded copy and its octet is cut from the
+     * raw text. Searched raw, a full-width `２０３．０．１１３．４５` has no `.` at
+     * all, and the whole address used to come back as its own "first octet".
+     * The dots stay as they were written.
      */
     override fun redact(original: String, candidate: Candidate, policy: MaskPolicy): String {
         val hidden = policy.maskChar.toString().repeat(3)
-        val firstOctet = original.substringBefore('.')
-        return "$firstOctet.$hidden.$hidden.$hidden"
+        val scanned = ScanText.of(original)
+        val dotInScan = scanned.scan.indexOf('.')
+        if (dotInScan < 0) return hidden
+        val firstOctet = original.substring(0, scanned.start(dotInScan))
+        val dot = original.substring(scanned.start(dotInScan), scanned.start(dotInScan + 1))
+        return "$firstOctet$dot$hidden$dot$hidden$dot$hidden"
     }
 }

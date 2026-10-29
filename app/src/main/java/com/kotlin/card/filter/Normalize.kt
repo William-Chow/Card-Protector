@@ -1,5 +1,7 @@
 package com.kotlin.card.filter
 
+import java.text.Normalizer
+
 /**
  * Fold the confusable characters a detector might trip over onto their plain
  * ASCII equivalents, **one character in, one character out**.
@@ -45,52 +47,115 @@ fun normalizeForScan(text: String): String {
 
 private fun fold(ch: Char): Char = when {
     // Nothing in ASCII folds, and ASCII is nearly every character this sees.
-    ch < '\u0080' -> ch
+    ch.code < 0x80 -> ch
     // Every decimal digit system in the BMP: full-width, Arabic-Indic and its
     // Persian form, Devanagari, Bengali, Thai and the rest.
     ch.isDigit() -> '0' + ch.digitToInt()
     // A soft hyphen draws nothing unless a line breaks on it. A dash rather than
     // the space the other invisible characters get, because it sits *inside*
     // words: as a space it would cut a password or a URL path in two.
-    ch == '\u00AD' -> '-'
+    ch.code == 0xAD -> '-'
     // Every dash — hyphen through horizontal bar, full-width and small
     // hyphen-minus, the CJK wave dash — and the minus sign, which is a math
     // symbol rather than a dash but looks like one.
-    ch == '\u2212' || ch.category == CharCategory.DASH_PUNCTUATION -> '-'
+    ch.code == 0x2212 || ch.category == CharCategory.DASH_PUNCTUATION -> '-'
     // Every space: no-break, narrow no-break, the U+2000 block, ideographic.
     ch.category == CharCategory.SPACE_SEPARATOR -> ' '
     // Every invisible format character: zero-width space, joiner and
     // non-joiner, word joiner, byte-order mark, and the bidi marks.
     ch.category == CharCategory.FORMAT -> ' '
-    else -> ch
+    // Styled and full-width ASCII: `ｈｔｔｐｓ：／／`, `²`, `Ⓐ`, `ℝ`.
+    else -> COMPAT[ch.code] ?: ch
 }
 
 /**
  * The fold of a code point outside the BMP, or `null` when it does not fold.
  *
- * The same three families [fold] handles, and for the same reason: the
- * mathematical digits (`𝟒`, `𝟜`, `𝟺` and their siblings) are what a "fancy
- * text" generator turns `4111…` into, and they came back whole, with nothing in
- * the counts; the tag characters are invisible format characters, so one wedged
- * between two groups hid a card the same way a zero-width space used to.
+ * The same families [fold] handles, and for the same reason: the mathematical
+ * alphabets and digits (`𝐀`, `𝟒`, `𝟜`, `𝟺` and their siblings) are what a
+ * "fancy text" generator turns plain text into, and a card, a key or an email
+ * written in them came back whole; the tag characters are invisible format
+ * characters, so one wedged between two groups hid a card the same way a
+ * zero-width space used to.
  */
 private fun foldSupplementary(codePoint: Int): Char? = when {
     Character.isDigit(codePoint) -> '0' + Character.digit(codePoint, 10)
     else -> when (Character.getType(codePoint)) {
         Character.DASH_PUNCTUATION.toInt() -> '-'
         Character.SPACE_SEPARATOR.toInt(), Character.FORMAT.toInt() -> ' '
-        else -> null
+        else -> COMPAT[codePoint]
     }
 }
+
+/**
+ * Where the styled and full-width copies of ASCII live: the characters a
+ * "fancy text" generator, a CJK keyboard or a copy from a formatted document
+ * turns plain letters, digits and punctuation into.
+ *
+ * Kept to these blocks on purpose. The table below is built from Unicode's own
+ * compatibility mapping (NFKC), and asking for that per character across the
+ * whole of Unicode would put a normaliser call on every CJK character of a 64 KB
+ * paste. These blocks hold every styled form of ASCII that NFKC knows about:
+ * the bold, italic, script, fraktur, double-struck, sans-serif and monospace
+ * alphabets, full-width ASCII, circled and squared letters, superscripts,
+ * subscripts and the "tiny text" modifier letters.
+ */
+internal val COMPAT_BLOCKS: List<IntRange> = listOf(
+    0x00A0..0x00BF,   // ª º ¹ ² ³
+    0x1D2C..0x1DBF,   // modifier letters: ᴬ ᵇ ᶜ
+    0x2070..0x209F,   // superscripts and subscripts: ⁴ ₂ ⁿ
+    0x2100..0x214F,   // letterlike symbols: ℂ ℍ ℕ ℝ ℤ ℯ
+    0x2460..0x24FF,   // circled digits and letters: ① Ⓐ ⓐ
+    0xFF01..0xFF5E,   // full-width ASCII: Ａ ａ ＠ ． ／
+    0x1D400..0x1D7FF, // mathematical alphanumerics: 𝐀 𝑨 𝒜 𝔄 𝔸 𝖠 𝙰
+    0x1F100..0x1F1FF  // squared and circled letters: 🄰 🄫
+)
+
+/** Each code point in [COMPAT_BLOCKS] whose NFKC form is one printable ASCII character. */
+private val COMPAT: Map<Int, Char> by lazy {
+    val map = HashMap<Int, Char>()
+    for (block in COMPAT_BLOCKS) {
+        for (codePoint in block) {
+            val form = Normalizer.normalize(String(Character.toChars(codePoint)), Normalizer.Form.NFKC)
+            if (form.length == 1 && form[0] in '!'..'~') map[codePoint] = form[0]
+        }
+    }
+    map
+}
+
+/** What one code point reads as to the detectors: its fold, or `null` when it does not fold. */
+internal fun foldCodePoint(codePoint: Int): Char? =
+    if (codePoint <= 0xFFFF) {
+        val ch = codePoint.toChar()
+        fold(ch).takeIf { it != ch }
+    } else {
+        foldSupplementary(codePoint)
+    }
+
+/**
+ * Whether [codePoint] reads as a digit to the detectors, and so has to be masked
+ * as one.
+ *
+ * Wider than `Character.isDigit`, and that is the point: `²` and `④` are not
+ * decimal digits to Unicode, but they fold to `2` and `4`, so a card written in
+ * them is a card to the scanner. A masker that disagreed would claim the number
+ * and hand every digit of it back.
+ */
+internal fun readsAsDigit(codePoint: Int): Boolean =
+    codePoint in 0x30..0x39 || foldCodePoint(codePoint)?.let { it in '0'..'9' } == true
+
+/** As [readsAsDigit], for letters too: `Ⓐ` and `🄰` are symbols to Unicode and letters to a reader. */
+internal fun readsAsLetterOrDigit(codePoint: Int): Boolean =
+    Character.isLetterOrDigit(codePoint) || foldCodePoint(codePoint)?.isLetterOrDigit() == true
 
 /**
  * The string the detectors read, and the way back from it to the text it came
  * from.
  *
  * [scan] is [normalizeForScan]'s fold with one more step: every code point
- * outside the BMP that folds — a digit, a dash, a space or an invisible format
- * character — is collapsed from its two `Char`s to the one ASCII character it
- * folds to. That is the only way a digit outside the BMP can be *one* digit to
+ * outside the BMP that folds — a digit, a styled letter, a dash, a space or an
+ * invisible format character — is collapsed from its two `Char`s to the one
+ * ASCII character it folds to. That is the only way a digit outside the BMP can be *one* digit to
  * the card pattern: folded in place, its two halves would be two characters, and
  * no rule about separators can make `𝟒𝟏𝟏𝟏 𝟏𝟏𝟏𝟏` read as one run that way.
  *

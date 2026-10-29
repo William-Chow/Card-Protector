@@ -3,8 +3,10 @@ package com.kotlin.card.filter.detect
 import com.kotlin.card.filter.Candidate
 import com.kotlin.card.filter.Detector
 import com.kotlin.card.filter.MaskPolicy
+import com.kotlin.card.filter.ScanText
 import com.kotlin.card.filter.SensitiveType
 import com.kotlin.card.filter.clampKeepCounts
+import com.kotlin.card.filter.readsAsDigit
 
 /**
  * A local part, an `@`, and a domain with a real-looking final label.
@@ -47,14 +49,19 @@ object EmailDetector : Detector {
      * card floor in `Redactor`.)
      */
     override fun redact(original: String, candidate: Candidate, policy: MaskPolicy): String {
-        val at = original.lastIndexOf('@')
-        if (at <= 0) return original
+        // Found on the folded copy: the pattern matched there, and in the raw
+        // text the `@` may be a full-width `＠` that a plain search misses —
+        // which used to hand the whole address back unmasked.
+        val scanned = ScanText.of(original)
+        val atInScan = scanned.scan.lastIndexOf('@')
+        if (atInScan <= 0) return original
+        val at = scanned.start(atInScan)
         val local = original.substring(0, at)
         // Counted in code points: a local part can open with a two-`Char` digit
         // like `𝟒`, and revealing one `Char` of it would be half a character.
         val points = local.codePointCount(0, local.length)
         val (clamped, _) = clampKeepCounts(points, keepLeading = 1, keepTrailing = 0)
-        val leading = if (Character.isDigit(local.codePointAt(0))) 0 else clamped
+        val leading = if (readsAsDigit(local.codePointAt(0))) 0 else clamped
         return local.substring(0, local.offsetByCodePoints(0, leading)) +
             policy.maskChar.toString().repeat(points - leading) +
             original.substring(at)

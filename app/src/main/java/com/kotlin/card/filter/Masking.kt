@@ -53,9 +53,12 @@ fun clampKeepCounts(digitCount: Int, keepLeading: Int, keepTrailing: Int): Pair<
  * walk counted nothing, masked nothing and handed the number back whole. A
  * masked one becomes a single glyph, so the output can be shorter than the
  * input; a revealed one is kept whole, never split down the middle.
+ *
+ * "Digit" means [readsAsDigit]: anything the scanner folds to 0-9, so a `²` or
+ * a `④` the detectors counted as part of a card is masked as part of it.
  */
 fun maskNumber(account: String, maskChar: Char, keepLeading: Int, keepTrailing: Int): String =
-    maskCodePoints(account, maskChar, keepLeading, keepTrailing, Character::isDigit)
+    maskCodePoints(account, maskChar, keepLeading, keepTrailing, ::readsAsDigit)
 
 /**
  * As [maskNumber], but letters are maskable too.
@@ -66,7 +69,7 @@ fun maskNumber(account: String, maskChar: Char, keepLeading: Int, keepTrailing: 
  * at least one alphanumeric always stays hidden.
  */
 fun maskAlnum(value: String, maskChar: Char, keepLeading: Int, keepTrailing: Int): String =
-    maskCodePoints(value, maskChar, keepLeading, keepTrailing, Character::isLetterOrDigit)
+    maskCodePoints(value, maskChar, keepLeading, keepTrailing, ::readsAsLetterOrDigit)
 
 /** Mask the code points of [text] that are [maskable], keeping the ends asked for. */
 private inline fun maskCodePoints(

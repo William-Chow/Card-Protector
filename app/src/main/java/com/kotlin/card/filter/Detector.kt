@@ -439,12 +439,13 @@ object Redactor {
      * masked only as a last resort: they are the ones most likely to belong to
      * the neighbouring value rather than to this run.
      *
-     * Digits are counted and masked as code points, and masking is done in place
-     * so every output index stays valid until the end. The one exception is a
-     * digit outside the BMP: it is two `Char`s and its mask glyph is one, so the
-     * glyph takes the first slot and the second is dropped only after the last
-     * index has been used. No mask glyph the picker offers is a digit, so masking
-     * can only ever reduce the count it is measuring.
+     * Digits (anything that [readsAsDigit]) are counted and masked as code
+     * points, and masking is done in place so every output index stays valid
+     * until the end. The one exception is a digit outside the BMP: it is two
+     * `Char`s and its mask glyph is one, so the glyph takes the first slot and
+     * the second is dropped only after the last index has been used. No mask
+     * glyph the picker offers reads as a digit, so masking can only ever reduce
+     * the count it is measuring.
      */
     private fun enforceRunCeiling(
         assembled: String,
@@ -458,7 +459,7 @@ object Redactor {
         val chars = assembled.toCharArray()
         var dropped: BooleanArray? = null
 
-        fun digitAt(index: Int): Boolean = Character.isDigit(Character.codePointAt(chars, index))
+        fun digitAt(index: Int): Boolean = readsAsDigit(Character.codePointAt(chars, index))
 
         fun mask(index: Int) {
             if (chars[index].isHighSurrogate() && index + 1 < chars.size && chars[index + 1].isLowSurrogate()) {
