@@ -25,6 +25,7 @@ class InAppUpdate(
 
     private val appUpdateManager: AppUpdateManager = AppUpdateManagerFactory.create(activity)
     private var currentType = AppUpdateType.FLEXIBLE
+    private var restartPrompt: Snackbar? = null
 
     init {
         appUpdateManager.appUpdateInfo.addOnSuccessListener { info ->
@@ -107,10 +108,17 @@ class InAppUpdate(
         }
     }
 
+    /**
+     * Offer the restart once. Both the install-state listener and [onResume]
+     * report a finished download, and a user who comes back to the app after it
+     * finished hits both: without this guard the prompt was dismissed and shown
+     * again on top of itself.
+     */
     private fun flexibleUpdateDownloadCompleted() {
+        if (restartPrompt?.isShownOrQueued == true) return
         val anchorView = activity.findViewById<android.view.View?>(android.R.id.content) ?: return
 
-        Snackbar.make(
+        restartPrompt = Snackbar.make(
             anchorView,
             activity.getString(R.string.update_downloaded),
             Snackbar.LENGTH_INDEFINITE

@@ -1,16 +1,13 @@
 package com.kotlin.card.ui
 
+import android.content.ClipData
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -32,12 +29,9 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -62,33 +56,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringArrayResource
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.OffsetMapping
-import androidx.compose.ui.text.input.TransformedText
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.google.android.gms.ads.AdError
 import com.google.android.gms.ads.AdRequest
@@ -107,7 +86,6 @@ import com.kotlin.card.filter.CardTools
 import com.kotlin.card.filter.MAX_REVEALED_DIGITS
 import com.kotlin.card.filter.MaskMode
 import com.kotlin.card.filter.MaskPolicy
-import com.kotlin.card.filter.RedactResult
 import com.kotlin.card.filter.Redactor
 import com.kotlin.card.filter.SensitiveType
 import com.kotlin.card.filter.asciiDigits
@@ -115,14 +93,8 @@ import com.kotlin.card.filter.extractFirstCardDigits
 import com.kotlin.card.filter.keepCounts
 import com.kotlin.card.filter.maskNumber
 import com.kotlin.card.filter.summarizeCounts
-import com.kotlin.card.ui.theme.CardGradBottom
-import com.kotlin.card.ui.theme.CardGradMid
-import com.kotlin.card.ui.theme.CardGradTop
 import com.kotlin.card.ui.theme.CardProTheme
-import com.kotlin.card.ui.theme.Gold
-import com.kotlin.card.ui.theme.OnHeroMuted
 import com.kotlin.card.ui.theme.Success
-import com.kotlin.card.ui.theme.TextPrimary
 import com.kotlin.card.ui.theme.ThemeMode
 import com.kotlin.card.ui.theme.successAccent
 import java.util.concurrent.atomic.AtomicBoolean
@@ -150,12 +122,6 @@ private const val SYNC_SCAN_LIMIT = 2_000
 
 /** How long a long paste sits still before it is scanned. */
 private const val SCAN_DEBOUNCE_MS = 120L
-
-/** The "nothing scanned yet" result, so the async path has something to show. */
-private val EMPTY_RESULT = RedactResult("", emptyMap())
-
-/** A background scan, and the input it was computed from. */
-private class BatchScan(val text: String, val policy: MaskPolicy, val result: RedactResult)
 
 // Enums go into saved state as ordinals rather than through the autoSaver's
 // Serializable path, which would put a whole class name in the Bundle.
@@ -265,14 +231,16 @@ class MainActivity : ComponentActivity() {
         intent = Intent()
     }
 
-    /** Text handed to us by a SEND share or the PROCESS_TEXT selection action. */
-    private fun parseSharedText(intent: Intent): String? = when (intent.action) {
-        Intent.ACTION_SEND ->
-            if (intent.type == "text/plain") intent.getStringExtra(Intent.EXTRA_TEXT) else null
-        Intent.ACTION_PROCESS_TEXT ->
-            intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
-        else -> null
-    }
+    /**
+     * Text handed to us by a SEND share. The selection action, PROCESS_TEXT, is
+     * routed to [RedactActivity] by the manifest and never reaches this screen.
+     */
+    private fun parseSharedText(intent: Intent): String? =
+        if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+            intent.getStringExtra(Intent.EXTRA_TEXT)
+        } else {
+            null
+        }
 
     /**
      * Consent has settled. Safe to call more than once — see [AdConsent.gather].
@@ -365,11 +333,17 @@ class MainActivity : ComponentActivity() {
         onPrivacyOptions: () -> Unit
     ) {
         val context = LocalContext.current
-        val clipboard = LocalClipboardManager.current
+        val clipboard = LocalClipboard.current
         val haptic = LocalHapticFeedback.current
         val snackbarHostState = remember { SnackbarHostState() }
         val scope = rememberCoroutineScope()
         val colors = MaterialTheme.colorScheme
+
+        /** Put masked text on the clipboard, labelled so the Android 13+ preview says what it is. */
+        fun copyMasked(text: String) {
+            val clip = ClipData.newPlainText(getString(R.string.clip_label_redacted), text)
+            scope.launch { clipboard.setClipEntry(ClipEntry(clip)) }
+        }
 
         // Everything the user typed or chose goes through rememberSaveable, so a
         // theme flip or a rotation — both of which destroy and recreate the
@@ -445,18 +419,13 @@ class MainActivity : ComponentActivity() {
             val result = withContext(Dispatchers.Default) { Redactor.redactAllInText(text, scanPolicy) }
             asyncBatch = BatchScan(text, scanPolicy, result)
         }
-        // Until the background scan catches up, the last one is the masked form
-        // of text the user has since changed: a paragraph they just deleted, or
-        // a different paste altogether. It stays on screen so a long paste does
-        // not flicker on every keystroke, but Copy, Share and the CTA wait for
-        // the scan that matches the field.
-        val currentAsync = asyncBatch?.takeIf { it.text == batchText && it.policy == policy }?.result
-        val batchPending = syncBatch == null && currentAsync == null
-        val batchResult = syncBatch ?: currentAsync ?: asyncBatch?.result ?: EMPTY_RESULT
-        val batchMasked = batchResult.output
-        val batchSummary = summarizeCounts(batchResult.counts, typeLabel)
-        val batchFound = batchResult.counts.isNotEmpty()
-        val batchReady = batchFound && !batchPending
+        // A stale scan may stay on screen, but only a current one enables Copy,
+        // Share and the CTA. See batchView.
+        val batch = batchView(batchText, policy, syncBatch, asyncBatch)
+        val batchMasked = batch.result.output
+        val batchSummary = summarizeCounts(batch.result.counts, typeLabel)
+        val batchFound = batch.found
+        val batchReady = batch.ready
 
         val hasInput = cardNumber.isNotEmpty()
         val brand = CardTools.detectBrand(cardNumber)
@@ -575,7 +544,7 @@ class MainActivity : ComponentActivity() {
                                 enabled = hasInput,
                                 contentPadding = actionPadding,
                                 onClick = {
-                                    clipboard.setText(AnnotatedString(singleMasked))
+                                    copyMasked(singleMasked)
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     scope.launch { snackbarHostState.showSnackbar(getString(R.string.copied_card)) }
                                 }
@@ -720,7 +689,7 @@ class MainActivity : ComponentActivity() {
                                         enabled = batchReady,
                                         contentPadding = PaddingValues(horizontal = 4.dp),
                                         onClick = {
-                                            clipboard.setText(AnnotatedString(batchMasked))
+                                            copyMasked(batchMasked)
                                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                             scope.launch {
                                                 snackbarHostState.showSnackbar(getString(R.string.copied_text))
@@ -888,7 +857,7 @@ class MainActivity : ComponentActivity() {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         commitPulse++
                         val single = screenMode == ScreenMode.Single
-                        clipboard.setText(AnnotatedString(if (single) singleMasked else batchMasked))
+                        copyMasked(if (single) singleMasked else batchMasked)
                         scope.launch {
                             snackbarHostState.showSnackbar(
                                 getString(if (single) R.string.copied_card else R.string.copied_text)
@@ -907,277 +876,5 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    }
-}
-
-/**
- * The masked result rendered as the visual hero: a credit-card mockup whose
- * kept (revealed) trailing digits glow mint while masked glyphs stay muted.
- */
-@Composable
-private fun CardHero(
-    masked: String,
-    brand: String,
-    luhnOk: Boolean,
-    hasInput: Boolean,
-    pulse: Int
-) {
-    // Fixed, not colorScheme-derived: the hero is dark in both themes.
-    val muted = OnHeroMuted
-    // Resolved here rather than inside the semantics lambda below, which is
-    // not a composable scope.
-    val description = heroDescription(masked, brand, luhnOk, hasInput)
-    val scale = remember { Animatable(1f) }
-    LaunchedEffect(pulse) {
-        if (pulse > 0) {
-            scale.snapTo(0.96f)
-            scale.animateTo(
-                targetValue = 1f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMediumLow
-                )
-            )
-        }
-    }
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                scaleX = scale.value
-                scaleY = scale.value
-            }
-            .clip(RoundedCornerShape(20.dp))
-            .background(
-                Brush.linearGradient(listOf(CardGradTop, CardGradMid, CardGradBottom))
-            )
-            .padding(20.dp)
-            // The number below is built one character at a time so the kept
-            // digits can be tinted, which leaves a screen reader reciting
-            // "asterisk asterisk asterisk…" sixteen times and never saying what
-            // it is looking at. One coherent sentence replaces the whole card.
-            .clearAndSetSemantics { contentDescription = description }
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(width = 40.dp, height = 30.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Gold)
-                )
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = brand,
-                        color = TextPrimary,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    if (luhnOk) {
-                        Text(
-                            text = stringResource(R.string.hero_valid),
-                            color = Success,
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            if (hasInput) {
-                Text(
-                    text = buildHeroNumber(masked, muted),
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 24.sp,
-                    letterSpacing = 2.sp
-                )
-            } else {
-                Text(
-                    text = "•••• •••• •••• ••••",
-                    color = muted,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 24.sp,
-                    letterSpacing = 2.sp
-                )
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            Text(
-                text = stringResource(
-                    if (hasInput) R.string.hero_footer_masked else R.string.hero_footer_empty
-                ),
-                color = muted,
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-    }
-}
-
-/**
- * What the hero says to a screen reader.
- *
- * Counts rather than recites: sixteen mask glyphs read out individually are
- * noise, and the useful facts are the brand, how much is hidden and which digits
- * survived. The revealed digits are spaced so they are read one by one — "1 1 1
- * 1" rather than "one thousand one hundred and eleven".
- *
- * Built from three nested templates rather than by gluing fragments together, so
- * each one stays a whole phrase a translator can reorder.
- */
-@Composable
-private fun heroDescription(
-    masked: String,
-    brand: String,
-    luhnOk: Boolean,
-    hasInput: Boolean
-): String {
-    if (!hasInput) return stringResource(R.string.hero_footer_empty)
-    val revealed = masked.filter { it.isDigit() }
-    val hidden = masked.count { !it.isDigit() && it != ' ' && it != '-' }
-    var text = stringResource(
-        R.string.hero_a11y,
-        brand,
-        pluralStringResource(R.plurals.digits_hidden, hidden, hidden)
-    )
-    if (revealed.isNotEmpty()) {
-        text = stringResource(R.string.hero_a11y_showing, text, revealed.toCharArray().joinToString(" "))
-    }
-    if (luhnOk) text = stringResource(R.string.hero_a11y_valid, text)
-    return text
-}
-
-/**
- * Two-tone the masked string in a single annotated string: kept digits in mint,
- * mask glyphs muted. Separators are dropped and the value is regrouped into 4s.
- */
-private fun buildHeroNumber(masked: String, mutedColor: Color): AnnotatedString {
-    val compact = masked.filter { it != '-' && it != ' ' }
-    return buildAnnotatedString {
-        compact.forEachIndexed { index, c ->
-            if (index != 0 && index % 4 == 0) {
-                withStyle(SpanStyle(color = mutedColor.copy(alpha = 0.4f))) { append(' ') }
-            }
-            if (c.isDigit()) {
-                withStyle(SpanStyle(color = Success, fontWeight = FontWeight.SemiBold)) { append(c) }
-            } else {
-                withStyle(SpanStyle(color = mutedColor)) { append(c) }
-            }
-        }
-    }
-}
-
-/**
- * Header overflow menu for switching between System / Light / Dark themes.
- *
- * The trigger is a bare `⋮` glyph rather than an icon, which made it two
- * separate accessibility failures: a screen reader announced the character and
- * nothing about what it does, and at `titleLarge` plus 10dp of padding the touch
- * target came out well under the 48dp minimum. The glyph is now decorative and
- * the box around it carries the role, the label and the size.
- */
-@Composable
-private fun OverflowMenu(
-    themeMode: ThemeMode,
-    onThemeChange: (ThemeMode) -> Unit,
-    privacyOptionsRequired: Boolean,
-    onPrivacyOptions: () -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val colors = MaterialTheme.colorScheme
-    val themeName = stringResource(
-        when (themeMode) {
-            ThemeMode.System -> R.string.theme_system
-            ThemeMode.Light -> R.string.theme_light
-            ThemeMode.Dark -> R.string.theme_dark
-        }
-    )
-    val menuLabel = stringResource(R.string.theme_menu, themeName)
-    Box {
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(50))
-                .semantics {
-                    role = Role.Button
-                    contentDescription = menuLabel
-                }
-                .clickable { expanded = true }
-                .size(48.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "⋮",
-                style = MaterialTheme.typography.titleLarge,
-                color = colors.onBackground,
-                modifier = Modifier.clearAndSetSemantics { }
-            )
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            val options = listOf(
-                stringResource(R.string.theme_system) to ThemeMode.System,
-                stringResource(R.string.theme_light) to ThemeMode.Light,
-                stringResource(R.string.theme_dark) to ThemeMode.Dark
-            )
-            options.forEach { (label, mode) ->
-                DropdownMenuItem(
-                    text = { Text(label) },
-                    onClick = {
-                        onThemeChange(mode)
-                        expanded = false
-                    },
-                    trailingIcon = {
-                        if (themeMode == mode) Text(text = "✓", color = colors.primary)
-                    }
-                )
-            }
-            // Shown only where the consent SDK says it is required, which is
-            // where a user who consented must be able to change their mind. An
-            // app that gathers consent correctly on first run and then offers no
-            // way back is still out of policy.
-            if (privacyOptionsRequired) {
-                HorizontalDivider()
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.privacy_options)) },
-                    onClick = {
-                        expanded = false
-                        onPrivacyOptions()
-                    }
-                )
-            }
-        }
-    }
-}
-
-/**
- * Displays a digit string grouped into 4-4-4-4 blocks while keeping the raw,
- * digits-only value intact. The offset mapping accounts for the inserted spaces
- * so the cursor stays put while editing.
- */
-private object CardGroupingTransformation : VisualTransformation {
-    override fun filter(text: AnnotatedString): TransformedText {
-        val digits = text.text
-        val grouped = buildString {
-            digits.forEachIndexed { index, c ->
-                if (index != 0 && index % 4 == 0) append(' ')
-                append(c)
-            }
-        }
-        val mapping = object : OffsetMapping {
-            override fun originalToTransformed(offset: Int): Int {
-                if (offset <= 0) return 0
-                return offset + (offset - 1) / 4
-            }
-
-            override fun transformedToOriginal(offset: Int): Int {
-                if (offset <= 0) return 0
-                return offset - offset / 5
-            }
-        }
-        return TransformedText(AnnotatedString(grouped), mapping)
     }
 }
