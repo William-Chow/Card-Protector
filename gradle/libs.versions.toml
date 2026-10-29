@@ -14,8 +14,7 @@ playServicesAds = "24.5.0"
 userMessagingPlatform = "3.2.0"
 appUpdate = "2.1.0"
 activityCompose = "1.10.1"
-composeBom = "2024.12.01"
-runtime = "1.10.6"
+composeBom = "2026.03.01"
 
 
 [libraries]
@@ -37,7 +36,6 @@ compose-ui = { group = "androidx.compose.ui", name = "ui" }
 compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
 compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3" }
-runtime = { group = "androidx.compose.runtime", name = "runtime", version.ref = "runtime" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
